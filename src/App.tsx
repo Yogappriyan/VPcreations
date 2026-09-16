@@ -117,6 +117,7 @@ export function App() {
                 </ProtectedAdminRoute>
               }
             />
+            <Route path="/admin/dashboard" element={<Navigate to="/admin" replace />} />
 
             {/* Fallback */}
             <Route path="*" element={<NotFoundPage />} />
