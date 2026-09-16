@@ -55,7 +55,7 @@ export const Footer: React.FC = () => {
           <div className="lg:col-span-2 space-y-4">
             <Link to="/" className="flex items-center gap-3 group inline-block">
               <div className="w-10 h-10 rounded-xl overflow-hidden border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]">
-                <img src="/images/vp-logo.jpg" alt="VP Creations" className="w-full h-full object-cover" />
+                <img src="https://i.postimg.cc/WzcNTVqV/VP-logo.png" alt="VP Creations" className="w-full h-full object-cover" />
               </div>
               <div className="flex flex-col">
                 <span className="font-black text-xl tracking-wider text-white font-['Outfit']">

@@ -113,7 +113,7 @@ export const AdminLogin: React.FC = () => {
 
           {/* Quick Demo Hint */}
           <div className="mt-6 pt-4 border-t border-slate-800/80 text-[11px] font-mono text-slate-500 text-center">
-            Default credentials: <span className="text-cyan-400">vkalvaro1005@gmail.com</span> / <span className="text-cyan-400">admin123</span>
+            <span className="text-cyan-400"></span>  <span className="text-cyan-400"></span>
           </div>
         </div>
 

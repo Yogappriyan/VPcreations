@@ -137,7 +137,7 @@ export const Home: React.FC = () => {
                 {/* Integrated Logo Watermark */}
                 <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/80 border border-cyan-500/30 backdrop-blur-md">
                   <div className="w-5 h-5 rounded-md overflow-hidden">
-                    <img src="/images/vp-logo.jpg" alt="VP" className="w-full h-full object-cover" />
+                    <img src="https://i.postimg.cc/WzcNTVqV/VP-logo.png" alt="VP" className="w-full h-full object-cover" />
                   </div>
                   <span className="text-[11px] font-mono font-bold text-white tracking-wider">VP CREATIONS</span>
                 </div>

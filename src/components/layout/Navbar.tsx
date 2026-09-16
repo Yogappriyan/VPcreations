@@ -54,7 +54,7 @@ export const Navbar: React.FC = () => {
           <Link to="/" className="flex items-center gap-3 group">
             <div className="relative w-10 h-10 rounded-xl overflow-hidden border border-cyan-500/30 group-hover:border-cyan-400/80 shadow-[0_0_15px_rgba(6,182,212,0.2)] transition-all">
               <img 
-                src="/images/vp-logo.jpg" 
+                src="https://i.postimg.cc/WzcNTVqV/VP-logo.png" 
                 alt="VP Creations" 
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 onError={(e) => {
