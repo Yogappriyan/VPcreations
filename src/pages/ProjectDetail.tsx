@@ -23,24 +23,23 @@ import {
   Clock
 } from 'lucide-react';
 import { useProjects } from '../hooks/usePortfolioData';
-import { defaultProjects } from '../data/defaultData';
 import { TechnologyBadge } from '../components/common/TechnologyBadge';
 import { Button } from '../components/common/Button';
+import { normalizeUrl } from '../lib/utils';
 
 export const ProjectDetail: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const { projects } = useProjects();
-  const navigate = useNavigate();
 
-  const activeProjects = (projects && projects.length > 0) ? projects : defaultProjects;
+  const activeProjects = projects || [];
   const projectIndex = activeProjects.findIndex((p) => p.slug === slug || p.id === slug);
-  const project = projectIndex !== -1 
-    ? activeProjects[projectIndex] 
-    : defaultProjects.find((p) => p.slug === slug || p.id === slug) || null;
+  const project = projectIndex !== -1 ? activeProjects[projectIndex] : null;
 
-  const nextProject = projectIndex !== -1 && projectIndex < activeProjects.length - 1
-    ? activeProjects[projectIndex + 1]
-    : activeProjects[0];
+  const nextProject = activeProjects.length > 1
+    ? (projectIndex !== -1 && projectIndex < activeProjects.length - 1
+      ? activeProjects[projectIndex + 1]
+      : activeProjects[0])
+    : null;
 
   if (!project) {
     return (
@@ -54,12 +53,14 @@ export const ProjectDetail: React.FC = () => {
     );
   }
 
-  const browserTabTitle = project.browserUrl || project.title;
   const subtitle = project.subtitle || (project.category === 'E-Commerce' ? 'Ecommerce Website' : `${project.category} Application`);
+  const techs = Array.isArray(project.technologies) ? project.technologies : [];
+  const liveHref = normalizeUrl(project.liveUrl);
+  const githubHref = normalizeUrl(project.githubUrl);
 
   const displayBadges = project.keyBadges && project.keyBadges.length > 0
     ? project.keyBadges
-    : ['HTML5', 'CSS3', 'JavaScript', ...(project.technologies.includes('MongoDB') ? ['MongoDB'] : project.technologies.includes('Node.js') ? ['Node.js'] : [])];
+    : ['HTML5', 'CSS3', 'JavaScript', ...(techs.includes('MongoDB') ? ['MongoDB'] : techs.includes('Node.js') ? ['Node.js'] : [])];
 
   return (
     <div className="min-h-screen pt-32 pb-24">
@@ -116,15 +117,15 @@ export const ProjectDetail: React.FC = () => {
 
           {/* Action Links */}
           <div className="pt-2 flex flex-wrap gap-4 items-center">
-            {project.liveUrl && (
-              <Button href={project.liveUrl} variant="primary" size="md">
+            {liveHref && (
+              <Button href={liveHref} variant="primary" size="md">
                 <ExternalLink className="w-4 h-4" />
                 Live Website
               </Button>
             )}
 
-            {project.githubUrl && (
-              <Button href={project.githubUrl} variant="secondary" size="md">
+            {githubHref && (
+              <Button href={githubHref} variant="secondary" size="md">
                 <Github className="w-4 h-4 text-slate-300" />
                 View Source Repository
               </Button>
@@ -136,7 +137,7 @@ export const ProjectDetail: React.FC = () => {
           </div>
         </div>
 
-        {/* Primary Desktop Browser Frame Artwork (Matching Reference Image) */}
+        {/* Primary Desktop Browser Frame Artwork */}
         <div className="rounded-3xl overflow-hidden bg-slate-950 border border-slate-800/90 mb-16 shadow-2xl shadow-cyan-950/40 flex flex-col">
           {/* Top Browser Chrome Bar */}
           <div className="flex items-center justify-between px-4 py-2.5 bg-slate-900/95 border-b border-slate-800/80 select-none">
@@ -148,7 +149,7 @@ export const ProjectDetail: React.FC = () => {
 
             <div className="flex items-center gap-2 px-4 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono text-slate-300">
               <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
-              <span>{project.liveUrl || `https://${project.slug}.vpcreations.dev`}</span>
+              <span>{liveHref || project.browserUrl || `https://${project.slug}.vpcreations.dev`}</span>
             </div>
 
             <div className="flex items-center gap-2 text-slate-500 text-xs font-mono">
@@ -258,65 +259,75 @@ export const ProjectDetail: React.FC = () => {
                 </h3>
 
                 <div className="space-y-4">
-                  <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex items-start gap-3">
-                    <Code2 className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="text-xs font-mono font-bold text-cyan-300 uppercase block mb-1">
-                        Frontend Interface
-                      </span>
-                      <p className="text-xs sm:text-sm text-slate-300">
-                        {project.architecture.frontend}
-                      </p>
+                  {project.architecture.frontend && (
+                    <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex items-start gap-3">
+                      <Code2 className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="text-xs font-mono font-bold text-cyan-300 uppercase block mb-1">
+                          Frontend Interface
+                        </span>
+                        <p className="text-xs sm:text-sm text-slate-300">
+                          {project.architecture.frontend}
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
-                  <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex items-start gap-3">
-                    <Server className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="text-xs font-mono font-bold text-blue-300 uppercase block mb-1">
-                        Backend & API Services
-                      </span>
-                      <p className="text-xs sm:text-sm text-slate-300">
-                        {project.architecture.backend}
-                      </p>
+                  {project.architecture.backend && (
+                    <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex items-start gap-3">
+                      <Server className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="text-xs font-mono font-bold text-blue-300 uppercase block mb-1">
+                          Backend & API Services
+                        </span>
+                        <p className="text-xs sm:text-sm text-slate-300">
+                          {project.architecture.backend}
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
-                  <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex items-start gap-3">
-                    <Database className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="text-xs font-mono font-bold text-emerald-300 uppercase block mb-1">
-                        Database & Real-time State
-                      </span>
-                      <p className="text-xs sm:text-sm text-slate-300">
-                        {project.architecture.database}
-                      </p>
+                  {project.architecture.database && (
+                    <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex items-start gap-3">
+                      <Database className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="text-xs font-mono font-bold text-emerald-300 uppercase block mb-1">
+                          Database & Real-time State
+                        </span>
+                        <p className="text-xs sm:text-sm text-slate-300">
+                          {project.architecture.database}
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
-                  <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex items-start gap-3">
-                    <CreditCard className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="text-xs font-mono font-bold text-purple-300 uppercase block mb-1">
-                        Payment Gateway & Security
-                      </span>
-                      <p className="text-xs sm:text-sm text-slate-300">
-                        {project.architecture.payments}
-                      </p>
+                  {project.architecture.payments && (
+                    <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex items-start gap-3">
+                      <CreditCard className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="text-xs font-mono font-bold text-purple-300 uppercase block mb-1">
+                          Payment Gateway & Security
+                        </span>
+                        <p className="text-xs sm:text-sm text-slate-300">
+                          {project.architecture.payments}
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
-                  <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex items-start gap-3">
-                    <Cloud className="w-5 h-5 text-sky-400 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="text-xs font-mono font-bold text-sky-300 uppercase block mb-1">
-                        Edge Hosting & Delivery
-                      </span>
-                      <p className="text-xs sm:text-sm text-slate-300">
-                        {project.architecture.hosting}
-                      </p>
+                  {project.architecture.hosting && (
+                    <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex items-start gap-3">
+                      <Cloud className="w-5 h-5 text-sky-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="text-xs font-mono font-bold text-sky-300 uppercase block mb-1">
+                          Edge Hosting & Delivery
+                        </span>
+                        <p className="text-xs sm:text-sm text-slate-300">
+                          {project.architecture.hosting}
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             )}
@@ -407,7 +418,7 @@ export const ProjectDetail: React.FC = () => {
               </h3>
 
               <div className="flex flex-wrap gap-2">
-                {project.technologies.map((tech) => (
+                {techs.map((tech) => (
                   <TechnologyBadge key={tech} name={tech} size="md" />
                 ))}
               </div>

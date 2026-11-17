@@ -34,12 +34,13 @@ export const Resume: React.FC = () => {
           <div>
             <h1 className="text-2xl font-bold text-white font-['Outfit']">Official Curriculum Vitae</h1>
             <p className="text-xs text-slate-400 font-mono">
-              Vishwam Kumar • Full Stack Developer & AI Specialist
+              {settings.personName || 'Vishwa'} • {settings.profession || 'Full Stack Developer & AI Specialist'}
             </p>
           </div>
 
           <div className="flex items-center gap-3">
             <button
+              type="button"
               onClick={handlePrint}
               className="px-4 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-white hover:border-cyan-500/40 text-xs font-mono font-semibold flex items-center gap-2 transition-all cursor-pointer"
             >
@@ -59,14 +60,14 @@ export const Resume: React.FC = () => {
           {/* Header */}
           <div className="border-b border-slate-800 print:border-black pb-8 mb-8 flex flex-col md:flex-row justify-between md:items-end gap-6">
             <div>
-              <h2 className="text-3xl sm:text-4xl font-black text-white print:text-black tracking-tight font-['Outfit']">
-                VISHWAM KUMAR
+              <h2 className="text-3xl sm:text-4xl font-black text-white print:text-black tracking-tight font-['Outfit'] uppercase">
+                {settings.personName || 'VISHWA'}
               </h2>
               <p className="text-base sm:text-lg font-mono text-cyan-400 print:text-black font-semibold mt-1">
-                Full Stack Developer | AI & Automation Specialist
+                {settings.profession || 'Full Stack Developer | AI & Automation Specialist'}
               </p>
               <p className="text-xs text-slate-400 print:text-slate-700 font-mono uppercase tracking-widest mt-1">
-                Founder, VP Creations (We Build Your Ideas)
+                Founder, {settings.name || 'VP Creations'} ({settings.tagline || 'We Build Your Ideas'})
               </p>
             </div>
 
@@ -140,7 +141,7 @@ export const Resume: React.FC = () => {
                   <p className="text-xs text-slate-300 print:text-slate-800 leading-relaxed mb-2">
                     {exp.description}
                   </p>
-                  {exp.technologies && (
+                  {exp.technologies && exp.technologies.length > 0 && (
                     <div className="text-[11px] font-mono text-slate-400 print:text-slate-600">
                       <strong>Tech:</strong> {exp.technologies.join(', ')}
                     </div>
@@ -166,9 +167,11 @@ export const Resume: React.FC = () => {
                   <p className="text-xs text-slate-300 print:text-slate-700 mb-2">
                     {proj.shortDescription || proj.description}
                   </p>
-                  <div className="text-[11px] font-mono text-slate-400 print:text-slate-600">
-                    <strong>Stack:</strong> {proj.technologies.join(', ')}
-                  </div>
+                  {proj.technologies && proj.technologies.length > 0 && (
+                    <div className="text-[11px] font-mono text-slate-400 print:text-slate-600">
+                      <strong>Stack:</strong> {proj.technologies.join(', ')}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

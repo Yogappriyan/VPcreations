@@ -37,7 +37,7 @@ export const TestimonialCard: React.FC<TestimonialCardProps> = ({ testimonial })
       {/* Author info */}
       <div className="flex flex-col items-center gap-2 pt-4 border-t border-slate-800/60 text-center">
         <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-bold text-white text-sm shadow-[0_0_12px_rgba(6,182,212,0.3)]">
-          {testimonial.clientName.charAt(0)}
+          {(testimonial.clientName || '?').charAt(0).toUpperCase()}
         </div>
         <div>
           <h4 className="text-sm font-bold text-white group-hover:text-cyan-300 transition-colors">

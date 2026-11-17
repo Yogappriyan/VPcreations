@@ -2,7 +2,11 @@ import React, { useState } from 'react';
 import { Send, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useEnquiries, useServices } from '../../hooks/usePortfolioData';
 
-export const ContactForm: React.FC = () => {
+interface ContactFormProps {
+  defaultService?: string;
+}
+
+export const ContactForm: React.FC<ContactFormProps> = ({ defaultService }) => {
   const { submitEnquiry } = useEnquiries();
   const { services } = useServices();
 
@@ -11,10 +15,16 @@ export const ContactForm: React.FC = () => {
     email: '',
     phone: '',
     businessName: '',
-    serviceRequired: 'Website Development',
+    serviceRequired: defaultService || 'Website Development',
     budgetRange: '₹30,000 - ₹50,000',
     message: ''
   });
+
+  React.useEffect(() => {
+    if (defaultService) {
+      setFormData(prev => ({ ...prev, serviceRequired: defaultService }));
+    }
+  }, [defaultService]);
 
   const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');

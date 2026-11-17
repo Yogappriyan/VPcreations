@@ -8,7 +8,7 @@ export const Projects: React.FC = () => {
   const { projects } = useProjects();
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
-  const categories = [
+  const baseCategories = [
     'All',
     'E-Commerce',
     'Fashion & Apparel',
@@ -20,6 +20,8 @@ export const Projects: React.FC = () => {
   const matchesCategory = (p: Project, category: string): boolean => {
     if (category === 'All') return true;
     const cat = (p.category || '').toLowerCase();
+    if (cat === category.toLowerCase()) return true;
+
     const sub = (p.subtitle || '').toLowerCase();
     const desc = (p.description || '').toLowerCase();
     const client = (p.clientType || '').toLowerCase();
@@ -42,6 +44,20 @@ export const Projects: React.FC = () => {
     }
     return full.includes(category.toLowerCase());
   };
+
+  // Include any custom project categories (e.g. AI, Automation, Web Applications) not covered by baseCategories
+  const extraCategories = Array.from(
+    new Set<string>(
+      projects
+        .map(p => (p.category || '').trim())
+        .filter(cat =>
+          Boolean(cat) &&
+          !baseCategories.some(bc => bc.toLowerCase() === cat.toLowerCase()) &&
+          !baseCategories.some(bc => bc !== 'All' && matchesCategory({ category: cat } as Project, bc))
+        )
+    )
+  );
+  const categories = [...baseCategories, ...extraCategories];
 
   const getCategoryCount = (category: string) => {
     if (category === 'All') return projects.length;

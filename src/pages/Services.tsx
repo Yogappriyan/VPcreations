@@ -5,13 +5,14 @@ import { useServices, useSettings } from '../hooks/usePortfolioData';
 import { SectionHeader } from '../components/common/SectionHeader';
 import { ServiceCard } from '../components/cards/ServiceCard';
 import { Button } from '../components/common/Button';
+import { sanitizeWhatsappNumber } from '../lib/utils';
 
 export const Services: React.FC = () => {
   const { services } = useServices();
   const { settings } = useSettings();
 
-  const whatsappUrl = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(
-    "Hi Vishwam, I would like to consult about your services at VP Creations."
+  const whatsappUrl = `https://wa.me/${sanitizeWhatsappNumber(settings.whatsappNumber)}?text=${encodeURIComponent(
+    `Hi ${settings.personName || 'Vishwam'}, I would like to consult about your services at ${settings.name || 'VP Creations'}.`
   )}`;
 
   return (

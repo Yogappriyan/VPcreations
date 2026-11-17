@@ -52,7 +52,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({ service }) => {
         </p>
 
         {/* Feature snippet bullets */}
-        {service.features && service.features.length > 0 && (
+        {Array.isArray(service.features) && service.features.length > 0 && (
           <ul className="space-y-2 mb-6 w-full max-w-xs mx-auto text-left">
             {service.features.slice(0, 3).map((feat, idx) => (
               <li key={idx} className="flex items-start gap-2 text-xs text-slate-300">

@@ -6,15 +6,14 @@ import {
   Instagram, 
   Mail, 
   Phone, 
-  ArrowUpRight, 
-  MessageCircle,
-  Sparkles,
-  Heart
+  MessageCircle
 } from 'lucide-react';
-import { useSettings } from '../../hooks/usePortfolioData';
+import { useSettings, useServices } from '../../hooks/usePortfolioData';
+import { normalizeUrl, sanitizeWhatsappNumber } from '../../lib/utils';
 
 export const Footer: React.FC = () => {
   const { settings } = useSettings();
+  const { services } = useServices();
 
   const currentYear = new Date().getFullYear();
 
@@ -29,17 +28,26 @@ export const Footer: React.FC = () => {
     { name: 'Contact', path: '/contact' },
   ];
 
-  const serviceLinks = [
-    { name: 'Website Development', path: '/services/website-development' },
-    { name: 'E-Commerce Development', path: '/services/e-commerce-development' },
-    { name: 'Web Applications', path: '/services/web-mobile-applications' },
-    { name: 'AI Integration', path: '/services/ai-integration' },
-    { name: 'Automation & n8n', path: '/services/automation-n8n' },
-  ];
+  const serviceLinks = services.length > 0
+    ? services.slice(0, 5).map((s) => ({ name: s.title, path: `/services/${s.slug}` }))
+    : [
+        { name: 'Website Development', path: '/services/website-development' },
+        { name: 'E-Commerce Development', path: '/services/e-commerce-development' },
+        { name: 'Web Applications', path: '/services/web-mobile-applications' },
+        { name: 'AI Integration', path: '/services/ai-integration' },
+        { name: 'Automation & n8n', path: '/services/automation-n8n' },
+      ];
+
+  const brandName = settings.name || 'VP CREATIONS';
+  const brandTagline = settings.tagline || 'WE BUILD YOUR IDEAS';
+  const personName = settings.personName || 'Vishwa';
+  const linkedinHref = normalizeUrl(settings.linkedinUrl);
+  const githubHref = normalizeUrl(settings.githubUrl);
+  const instagramHref = normalizeUrl(settings.instagramUrl);
 
   // WhatsApp link with encoded message
-  const whatsappUrl = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(
-    "Hi Vishwam, I found VP Creations and would like to discuss a website/project."
+  const whatsappUrl = `https://wa.me/${sanitizeWhatsappNumber(settings.whatsappNumber)}?text=${encodeURIComponent(
+    `Hi ${personName}, I found ${brandName} and would like to discuss a website/project.`
   )}`;
 
   return (
@@ -53,53 +61,59 @@ export const Footer: React.FC = () => {
           
           {/* Brand Col */}
           <div className="lg:col-span-2 space-y-4">
-            <Link to="/" className="flex items-center gap-3 group inline-block">
+            <Link to="/" className="flex items-center gap-3 group inline-flex">
               <div className="w-10 h-10 rounded-xl overflow-hidden border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]">
-                <img src="https://i.postimg.cc/WzcNTVqV/VP-logo.png" alt="VP Creations" className="w-full h-full object-cover" />
+                <img src="/images/vp-logo.jpg" alt={brandName} className="w-full h-full object-cover" />
               </div>
               <div className="flex flex-col">
                 <span className="font-black text-xl tracking-wider text-white font-['Outfit']">
-                  VP CREATIONS
+                  {brandName}
                 </span>
                 <span className="text-[10px] font-mono tracking-widest text-cyan-400 uppercase font-semibold">
-                  WE BUILD YOUR IDEAS
+                  {brandTagline}
                 </span>
               </div>
             </Link>
 
             <p className="text-slate-400 text-sm leading-relaxed max-w-sm">
-              VP Creations is the premier software and digital studio founded by Vishwam Kumar. 
+              {brandName} is the premier software and digital studio founded by {personName}. 
               Engineering high-converting e-commerce, custom web apps, and intelligent automation systems.
             </p>
 
             <div className="pt-2 flex flex-wrap gap-3">
-              <a
-                href={settings.linkedinUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-9 h-9 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/40 flex items-center justify-center transition-all"
-                title="LinkedIn"
-              >
-                <Linkedin className="w-4 h-4" />
-              </a>
-              <a
-                href={settings.githubUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-9 h-9 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/40 flex items-center justify-center transition-all"
-                title="GitHub"
-              >
-                <Github className="w-4 h-4" />
-              </a>
-              <a
-                href={settings.instagramUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-9 h-9 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/40 flex items-center justify-center transition-all"
-                title="Instagram"
-              >
-                <Instagram className="w-4 h-4" />
-              </a>
+              {linkedinHref && (
+                <a
+                  href={linkedinHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-9 h-9 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/40 flex items-center justify-center transition-all"
+                  title="LinkedIn"
+                >
+                  <Linkedin className="w-4 h-4" />
+                </a>
+              )}
+              {githubHref && (
+                <a
+                  href={githubHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-9 h-9 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/40 flex items-center justify-center transition-all"
+                  title="GitHub"
+                >
+                  <Github className="w-4 h-4" />
+                </a>
+              )}
+              {instagramHref && (
+                <a
+                  href={instagramHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-9 h-9 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/40 flex items-center justify-center transition-all"
+                  title="Instagram"
+                >
+                  <Instagram className="w-4 h-4" />
+                </a>
+              )}
               <a
                 href={whatsappUrl}
                 target="_blank"
@@ -146,7 +160,7 @@ export const Footer: React.FC = () => {
             </h4>
             <ul className="space-y-2.5 text-sm">
               {serviceLinks.map((item) => (
-                <li key={item.name}>
+                <li key={item.path}>
                   <Link
                     to={item.path}
                     className="text-slate-400 hover:text-cyan-300 transition-colors inline-flex items-center gap-1 group"
@@ -202,13 +216,13 @@ export const Footer: React.FC = () => {
 
         {/* Bottom Bar */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 font-mono">
-          <p>© {currentYear} VP Creations. All rights reserved.</p>
+          <p>{settings.footerText || `© ${currentYear} ${brandName}. All rights reserved.`}</p>
           <div className="flex items-center gap-4">
             <Link to="/admin/login" className="hover:text-cyan-400 transition-colors">
               Admin Portal
             </Link>
             <span>•</span>
-            <span className="text-slate-400">Architected by Vishwam Kumar</span>
+            <span className="text-slate-400">Architected by {personName}</span>
           </div>
         </div>
       </div>

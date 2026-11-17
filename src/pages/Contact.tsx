@@ -14,12 +14,16 @@ import {
 import { useSettings } from '../hooks/usePortfolioData';
 import { SectionHeader } from '../components/common/SectionHeader';
 import { ContactForm } from '../components/forms/ContactForm';
+import { normalizeUrl, sanitizeWhatsappNumber } from '../lib/utils';
 
 export const Contact: React.FC = () => {
   const { settings } = useSettings();
 
-  const message = "Hi Vishwam, I found VP Creations and would like to discuss a website/project.";
-  const whatsappUrl = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(message)}`;
+  const message = `Hi ${settings.personName || 'Vishwa'}, I found ${settings.name || 'VP Creations'} and would like to discuss a website/project.`;
+  const whatsappUrl = `https://wa.me/${sanitizeWhatsappNumber(settings.whatsappNumber)}?text=${encodeURIComponent(message)}`;
+  const linkedinHref = normalizeUrl(settings.linkedinUrl);
+  const githubHref = normalizeUrl(settings.githubUrl);
+  const instagramHref = normalizeUrl(settings.instagramUrl);
 
   return (
     <div className="min-h-screen pt-32 pb-24 relative overflow-hidden">
@@ -125,30 +129,36 @@ export const Contact: React.FC = () => {
               <div className="pt-4 border-t border-slate-800">
                 <div className="text-xs font-mono uppercase text-slate-400 mb-3">Connect on Social</div>
                 <div className="flex items-center gap-3">
-                  <a
-                    href={settings.linkedinUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/40 transition-colors"
-                  >
-                    <Linkedin className="w-4 h-4" />
-                  </a>
-                  <a
-                    href={settings.githubUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/40 transition-colors"
-                  >
-                    <Github className="w-4 h-4" />
-                  </a>
-                  <a
-                    href={settings.instagramUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/40 transition-colors"
-                  >
-                    <Instagram className="w-4 h-4" />
-                  </a>
+                  {linkedinHref && (
+                    <a
+                      href={linkedinHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/40 transition-colors"
+                    >
+                      <Linkedin className="w-4 h-4" />
+                    </a>
+                  )}
+                  {githubHref && (
+                    <a
+                      href={githubHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/40 transition-colors"
+                    >
+                      <Github className="w-4 h-4" />
+                    </a>
+                  )}
+                  {instagramHref && (
+                    <a
+                      href={instagramHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/40 transition-colors"
+                    >
+                      <Instagram className="w-4 h-4" />
+                    </a>
+                  )}
                 </div>
               </div>
 

@@ -1,18 +1,41 @@
 import { useState, useEffect, useCallback } from 'react';
-import { 
-  Project, 
-  Service, 
-  Skill, 
-  Experience, 
-  Testimonial, 
-  Enquiry, 
-  WebsiteSettings 
+import {
+  Project,
+  Service,
+  Skill,
+  Experience,
+  Testimonial,
+  Enquiry,
+  WebsiteSettings
 } from '../types';
 import { DataService } from '../lib/firebase';
 import { defaultSettings, defaultProjects } from '../data/defaultData';
 
+function useSyncListener(syncKey: string, refetch: () => Promise<void>) {
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const customEvent = event as CustomEvent<{ key?: string }>;
+      if (!customEvent.detail?.key || customEvent.detail.key === syncKey) {
+        refetch();
+      }
+    };
+    window.addEventListener('vp-storage-sync', handler);
+    return () => window.removeEventListener('vp-storage-sync', handler);
+  }, [syncKey, refetch]);
+}
+
 export function useSettings() {
-  const [settings, setSettings] = useState<WebsiteSettings>(defaultSettings);
+  const [settings, setSettings] = useState<WebsiteSettings>(() => {
+    try {
+      const cached = localStorage.getItem('vp_portfolio_settings');
+      if (cached) {
+        return { ...defaultSettings, ...JSON.parse(cached) };
+      }
+    } catch {
+      // fallback
+    }
+    return defaultSettings;
+  });
   const [loading, setLoading] = useState(true);
 
   const fetchSettings = useCallback(async () => {
@@ -30,9 +53,11 @@ export function useSettings() {
     fetchSettings();
   }, [fetchSettings]);
 
+  useSyncListener('settings', fetchSettings);
+
   const updateSettings = async (newSettings: WebsiteSettings) => {
     await DataService.saveSettings(newSettings);
-    setSettings(newSettings);
+    setSettings({ ...defaultSettings, ...newSettings });
   };
 
   return { settings, loading, refetch: fetchSettings, updateSettings };
@@ -68,6 +93,8 @@ export function useProjects() {
     fetchProjects();
   }, [fetchProjects]);
 
+  useSyncListener('projects', fetchProjects);
+
   const saveProject = async (project: Project) => {
     await DataService.saveProject(project);
     await fetchProjects();
@@ -101,12 +128,15 @@ export function useServices() {
     fetchServices();
   }, [fetchServices]);
 
+  useSyncListener('services', fetchServices);
+
   const saveService = async (service: Service) => {
     await DataService.saveService(service);
     await fetchServices();
   };
 
   const deleteService = async (id: string) => {
+    setServices(prev => prev.filter(s => s.id !== id && s.slug !== id));
     await DataService.deleteService(id);
     await fetchServices();
   };
@@ -133,12 +163,15 @@ export function useSkills() {
     fetchSkills();
   }, [fetchSkills]);
 
+  useSyncListener('skills', fetchSkills);
+
   const saveSkill = async (skill: Skill) => {
     await DataService.saveSkill(skill);
     await fetchSkills();
   };
 
   const deleteSkill = async (id: string) => {
+    setSkills(prev => prev.filter(s => s.id !== id));
     await DataService.deleteSkill(id);
     await fetchSkills();
   };
@@ -165,12 +198,15 @@ export function useExperience() {
     fetchExp();
   }, [fetchExp]);
 
+  useSyncListener('experience', fetchExp);
+
   const saveExperience = async (exp: Experience) => {
     await DataService.saveExperience(exp);
     await fetchExp();
   };
 
   const deleteExperience = async (id: string) => {
+    setExperience(prev => prev.filter(e => e.id !== id));
     await DataService.deleteExperience(id);
     await fetchExp();
   };
@@ -197,12 +233,15 @@ export function useTestimonials() {
     fetchTest();
   }, [fetchTest]);
 
+  useSyncListener('testimonials', fetchTest);
+
   const saveTestimonial = async (item: Testimonial) => {
     await DataService.saveTestimonial(item);
     await fetchTest();
   };
 
   const deleteTestimonial = async (id: string) => {
+    setTestimonials(prev => prev.filter(t => t.id !== id));
     await DataService.deleteTestimonial(id);
     await fetchTest();
   };
@@ -229,6 +268,8 @@ export function useEnquiries() {
     fetchEnquiries();
   }, [fetchEnquiries]);
 
+  useSyncListener('enquiries', fetchEnquiries);
+
   const submitEnquiry = async (data: Omit<Enquiry, 'id' | 'date' | 'status' | 'read'>) => {
     const res = await DataService.submitEnquiry(data);
     await fetchEnquiries();
@@ -241,6 +282,7 @@ export function useEnquiries() {
   };
 
   const deleteEnquiry = async (id: string) => {
+    setEnquiries(prev => prev.filter(e => e.id !== id));
     await DataService.deleteEnquiry(id);
     await fetchEnquiries();
   };

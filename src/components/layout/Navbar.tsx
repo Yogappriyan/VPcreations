@@ -54,7 +54,7 @@ export const Navbar: React.FC = () => {
           <Link to="/" className="flex items-center gap-3 group">
             <div className="relative w-10 h-10 rounded-xl overflow-hidden border border-cyan-500/30 group-hover:border-cyan-400/80 shadow-[0_0_15px_rgba(6,182,212,0.2)] transition-all">
               <img 
-                src="https://i.postimg.cc/WzcNTVqV/VP-logo.png" 
+                src="/images/vp-logo.jpg" 
                 alt="VP Creations" 
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 onError={(e) => {
@@ -65,10 +65,10 @@ export const Navbar: React.FC = () => {
             </div>
             <div className="flex flex-col">
               <span className="font-extrabold text-lg tracking-wider text-white group-hover:text-cyan-300 transition-colors flex items-center gap-1.5 font-['Outfit']">
-                VP CREATIONS
+                {settings.name || 'VP CREATIONS'}
               </span>
               <span className="text-[10px] font-mono tracking-widest text-cyan-400 uppercase -mt-1 font-semibold">
-                WE BUILD YOUR IDEAS
+                {settings.tagline || 'WE BUILD YOUR IDEAS'}
               </span>
             </div>
           </Link>

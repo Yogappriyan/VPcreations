@@ -44,24 +44,25 @@ import {
   TestimonialModal 
 } from '../../components/admin/AdminModals';
 import { FirebaseConfigModal } from '../../components/admin/FirebaseConfigModal';
-import { isFirebaseConfigured, DataService } from '../../lib/firebase';
+import { isFirebaseConfigured } from '../../lib/firebase';
+import { normalizeUrl } from '../../lib/utils';
 
 type AdminTab = 'overview' | 'projects' | 'services' | 'skills' | 'experience' | 'testimonials' | 'enquiries' | 'settings';
 
 export const AdminDashboard: React.FC = () => {
-  const { logout, user } = useAuth();
+  const { logout } = useAuth();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
 
   // Hooks
-  const { projects, saveProject, deleteProject } = useProjects();
-  const { services, saveService, deleteService } = useServices();
-  const { skills, saveSkill, deleteSkill } = useSkills();
-  const { experience, saveExperience, deleteExperience } = useExperience();
-  const { testimonials, saveTestimonial, deleteTestimonial } = useTestimonials();
-  const { enquiries, updateStatus, deleteEnquiry } = useEnquiries();
-  const { settings, updateSettings } = useSettings();
+  const { projects, saveProject, deleteProject, refetch: refetchProjects } = useProjects();
+  const { services, saveService, deleteService, refetch: refetchServices } = useServices();
+  const { skills, saveSkill, deleteSkill, refetch: refetchSkills } = useSkills();
+  const { experience, saveExperience, deleteExperience, refetch: refetchExperience } = useExperience();
+  const { testimonials, saveTestimonial, deleteTestimonial, refetch: refetchTestimonials } = useTestimonials();
+  const { enquiries, updateStatus, deleteEnquiry, refetch: refetchEnquiries } = useEnquiries();
+  const { settings, updateSettings, refetch: refetchSettings } = useSettings();
 
   // Modal States
   const [projectModalOpen, setProjectModalOpen] = useState(false);
@@ -143,9 +144,22 @@ export const AdminDashboard: React.FC = () => {
 
   const handleSettingsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await updateSettings(settingsForm);
-    setSyncStatus('Settings updated successfully!');
-    setTimeout(() => setSyncStatus(null), 3000);
+    try {
+      const cleanedSettings = {
+        ...settingsForm,
+        linkedinUrl: normalizeUrl(settingsForm.linkedinUrl),
+        githubUrl: normalizeUrl(settingsForm.githubUrl),
+        instagramUrl: normalizeUrl(settingsForm.instagramUrl),
+      };
+      await updateSettings(cleanedSettings);
+      setSettingsForm(cleanedSettings);
+      setSyncStatus('Settings updated successfully!');
+      showToast('Global settings saved.');
+      setTimeout(() => setSyncStatus(null), 3000);
+    } catch (err: any) {
+      console.error('Failed to save settings:', err);
+      showToast(err?.message || 'Error: Failed to save settings.');
+    }
   };
 
   const isConnectedToFirebase = isFirebaseConfigured();
@@ -397,12 +411,23 @@ export const AdminDashboard: React.FC = () => {
                         {proj.shortDescription || proj.description}
                       </p>
                       <div className="flex flex-wrap gap-1 mb-4">
-                        {proj.technologies.slice(0, 3).map((t) => (
+                        {(proj.technologies || []).slice(0, 3).map((t) => (
                           <span key={t} className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-950 border border-slate-800 text-slate-300">
                             {t}
                           </span>
                         ))}
                       </div>
+                      {proj.liveUrl && (
+                        <a
+                          href={proj.liveUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[11px] font-mono text-cyan-400/90 hover:text-cyan-300 truncate block mb-3"
+                          title={proj.liveUrl}
+                        >
+                          {proj.liveUrl}
+                        </a>
+                      )}
                     </div>
 
                     <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
@@ -673,9 +698,13 @@ export const AdminDashboard: React.FC = () => {
             ) : (
               <div className="space-y-4">
                 {enquiries.map((enq) => {
-                  const whatsappReplyUrl = `https://wa.me/${enq.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                    `Hi ${enq.name}, Vishwam Kumar here from VP Creations. I received your enquiry regarding ${enq.serviceRequired}.`
+                  const cleanPhone = (enq.phone || '').replace(/[^0-9]/g, '');
+                  const whatsappReplyUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(
+                    `Hi ${enq.name}, Vishwa here from VP Creations. I received your enquiry regarding ${enq.serviceRequired}.`
                   )}`;
+                  const formattedDate = enq.date && !Number.isNaN(new Date(enq.date).getTime())
+                    ? new Date(enq.date).toLocaleDateString()
+                    : 'Recent';
 
                   return (
                     <div key={enq.id} className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
@@ -684,7 +713,7 @@ export const AdminDashboard: React.FC = () => {
                           <h4 className="text-base font-bold text-white">{enq.name}</h4>
                           <span className="text-xs text-slate-400 font-mono">({enq.businessName || 'Individual'})</span>
                           <span className="text-[11px] text-slate-500 font-mono">
-                            {new Date(enq.createdAt).toLocaleDateString()}
+                            {formattedDate}
                           </span>
                         </div>
 
@@ -693,7 +722,10 @@ export const AdminDashboard: React.FC = () => {
                           <label className="text-xs font-mono text-slate-400">Status:</label>
                           <select
                             value={enq.status}
-                            onChange={(e) => updateStatus(enq.id, e.target.value as any)}
+                            onChange={async (e) => {
+                              await updateStatus(enq.id, e.target.value as Enquiry['status']);
+                              showToast(`Enquiry status updated to "${e.target.value}".`);
+                            }}
                             className="px-2.5 py-1 rounded bg-slate-950 border border-slate-700 text-xs font-mono text-cyan-300 focus:outline-none"
                           >
                             <option value="New">New</option>
@@ -794,8 +826,8 @@ export const AdminDashboard: React.FC = () => {
                   <label className="block text-xs font-mono text-slate-300 uppercase mb-1">Brand Name</label>
                   <input
                     type="text"
-                    value={settingsForm.brandName || ''}
-                    onChange={(e) => setSettingsForm({ ...settingsForm, brandName: e.target.value })}
+                    value={settingsForm.name || ''}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, name: e.target.value })}
                     className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-sm focus:border-cyan-400 focus:outline-none"
                   />
                 </div>
@@ -806,6 +838,28 @@ export const AdminDashboard: React.FC = () => {
                     type="text"
                     value={settingsForm.tagline || ''}
                     onChange={(e) => setSettingsForm({ ...settingsForm, tagline: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-sm focus:border-cyan-400 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 uppercase mb-1">Founder / Person Name</label>
+                  <input
+                    type="text"
+                    value={settingsForm.personName || ''}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, personName: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-sm focus:border-cyan-400 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 uppercase mb-1">Hero Subtitle</label>
+                  <input
+                    type="text"
+                    value={settingsForm.heroSubtitle || ''}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, heroSubtitle: e.target.value })}
                     className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-sm focus:border-cyan-400 focus:outline-none"
                   />
                 </div>
@@ -843,13 +897,46 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 uppercase mb-1">Hero Headline</label>
+                  <input
+                    type="text"
+                    value={settingsForm.heroTitle || ''}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, heroTitle: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-sm focus:border-cyan-400 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 uppercase mb-1">Profession / Role</label>
+                  <input
+                    type="text"
+                    value={settingsForm.profession || ''}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, profession: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-sm focus:border-cyan-400 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono text-slate-300 uppercase mb-1">Hero Description</label>
+                <textarea
+                  rows={2}
+                  value={settingsForm.heroDescription || ''}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, heroDescription: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-xs focus:border-cyan-400 focus:outline-none resize-none"
+                />
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-mono text-slate-300 uppercase mb-1">LinkedIn URL</label>
                   <input
-                    type="url"
+                    type="text"
                     value={settingsForm.linkedinUrl || ''}
                     onChange={(e) => setSettingsForm({ ...settingsForm, linkedinUrl: e.target.value })}
+                    placeholder="https://linkedin.com/in/..."
                     className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-xs focus:border-cyan-400 focus:outline-none font-mono"
                   />
                 </div>
@@ -857,9 +944,10 @@ export const AdminDashboard: React.FC = () => {
                 <div>
                   <label className="block text-xs font-mono text-slate-300 uppercase mb-1">GitHub URL</label>
                   <input
-                    type="url"
+                    type="text"
                     value={settingsForm.githubUrl || ''}
                     onChange={(e) => setSettingsForm({ ...settingsForm, githubUrl: e.target.value })}
+                    placeholder="https://github.com/..."
                     className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-xs focus:border-cyan-400 focus:outline-none font-mono"
                   />
                 </div>
@@ -867,23 +955,37 @@ export const AdminDashboard: React.FC = () => {
                 <div>
                   <label className="block text-xs font-mono text-slate-300 uppercase mb-1">Instagram URL</label>
                   <input
-                    type="url"
+                    type="text"
                     value={settingsForm.instagramUrl || ''}
                     onChange={(e) => setSettingsForm({ ...settingsForm, instagramUrl: e.target.value })}
+                    placeholder="https://instagram.com/..."
                     className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-xs focus:border-cyan-400 focus:outline-none font-mono"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-mono text-slate-300 uppercase mb-1">Resume File / URL</label>
-                <input
-                  type="text"
-                  value={settingsForm.resumeUrl || ''}
-                  onChange={(e) => setSettingsForm({ ...settingsForm, resumeUrl: e.target.value })}
-                  placeholder="/resume"
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-xs focus:border-cyan-400 focus:outline-none font-mono"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 uppercase mb-1">Resume File / URL</label>
+                  <input
+                    type="text"
+                    value={settingsForm.resumePdfUrl || ''}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, resumePdfUrl: e.target.value })}
+                    placeholder="/resume"
+                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-xs focus:border-cyan-400 focus:outline-none font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 uppercase mb-1">Footer Copyright Text</label>
+                  <input
+                    type="text"
+                    value={settingsForm.footerText || ''}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, footerText: e.target.value })}
+                    placeholder="© 2025 VP Creations. All rights reserved."
+                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-xs focus:border-cyan-400 focus:outline-none font-mono"
+                  />
+                </div>
               </div>
 
               <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
@@ -915,8 +1017,10 @@ export const AdminDashboard: React.FC = () => {
         isOpen={projectModalOpen}
         onClose={() => setProjectModalOpen(false)}
         projectToEdit={editingProject}
+        existingProjects={projects}
         onSave={async (proj) => {
           await saveProject(proj);
+          showToast(editingProject ? `Project "${proj.title}" updated!` : `Project "${proj.title}" added!`);
         }}
       />
 
@@ -926,6 +1030,7 @@ export const AdminDashboard: React.FC = () => {
         serviceToEdit={editingService}
         onSave={async (srv) => {
           await saveService(srv);
+          showToast(editingService ? `Service "${srv.title}" updated!` : `Service "${srv.title}" added!`);
         }}
       />
 
@@ -935,6 +1040,7 @@ export const AdminDashboard: React.FC = () => {
         skillToEdit={editingSkill}
         onSave={async (sk) => {
           await saveSkill(sk);
+          showToast(editingSkill ? `Skill "${sk.name}" updated!` : `Skill "${sk.name}" added!`);
         }}
       />
 
@@ -944,6 +1050,7 @@ export const AdminDashboard: React.FC = () => {
         expToEdit={editingExp}
         onSave={async (exp) => {
           await saveExperience(exp);
+          showToast(editingExp ? `Milestone updated!` : `Milestone added!`);
         }}
       />
 
@@ -953,6 +1060,7 @@ export const AdminDashboard: React.FC = () => {
         testToEdit={editingTest}
         onSave={async (t) => {
           await saveTestimonial(t);
+          showToast(editingTest ? `Testimonial updated!` : `Testimonial added!`);
         }}
       />
 
@@ -960,7 +1068,14 @@ export const AdminDashboard: React.FC = () => {
         isOpen={firebaseModalOpen}
         onClose={() => setFirebaseModalOpen(false)}
         onConfigSaved={() => {
-          // Trigger refresh
+          refetchProjects();
+          refetchServices();
+          refetchSkills();
+          refetchExperience();
+          refetchTestimonials();
+          refetchEnquiries();
+          refetchSettings();
+          showToast('Firebase configuration refreshed.');
         }}
       />
 

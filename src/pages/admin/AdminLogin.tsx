@@ -4,8 +4,8 @@ import { Lock, Mail, ShieldAlert, ArrowRight, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 export const AdminLogin: React.FC = () => {
-  const [email, setEmail] = useState('vkalvaro1005@gmail.com');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -25,7 +25,11 @@ export const AdminLogin: React.FC = () => {
     setLoading(true);
 
     try {
-      await login(email, password);
+      const res = await login(email, password);
+      if (!res.success) {
+        setError(res.error || 'Invalid credentials. Please verify your email and password.');
+        return;
+      }
       navigate('/admin');
     } catch (err: any) {
       console.error(err);
@@ -76,7 +80,7 @@ export const AdminLogin: React.FC = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:border-cyan-400 focus:outline-none"
-                  placeholder="vkalvaro1005@gmail.com"
+                  placeholder="Email"
                 />
                 <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
               </div>
@@ -113,7 +117,7 @@ export const AdminLogin: React.FC = () => {
 
           {/* Quick Demo Hint */}
           <div className="mt-6 pt-4 border-t border-slate-800/80 text-[11px] font-mono text-slate-500 text-center">
-            <span className="text-cyan-400"></span>  <span className="text-cyan-400"></span>
+            Default credentials: <span className="text-cyan-400"></span>  <span className="text-cyan-400"></span>
           </div>
         </div>
 

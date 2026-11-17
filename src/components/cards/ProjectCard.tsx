@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ExternalLink, ArrowRight, Github, Globe } from 'lucide-react';
 import { Project } from '../../types';
 import { TechnologyBadge } from '../common/TechnologyBadge';
+import { normalizeUrl, extractDomain } from '../../lib/utils';
 
 interface ProjectCardProps {
   project: Project;
@@ -10,13 +11,14 @@ interface ProjectCardProps {
 }
 
 export const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
+  const techs = Array.isArray(project.technologies) ? project.technologies : [];
   // Use keyBadges if present, or infer from technologies
   const displayBadges = project.keyBadges && project.keyBadges.length > 0
     ? project.keyBadges
-    : ['HTML5', 'CSS3', 'JavaScript', ...(project.technologies.includes('MongoDB') ? ['MongoDB'] : project.technologies.includes('Node.js') ? ['Node.js'] : [])];
+    : ['HTML5', 'CSS3', 'JavaScript', ...(techs.includes('MongoDB') ? ['MongoDB'] : techs.includes('Node.js') ? ['Node.js'] : [])];
 
-  const browserTabTitle = project.browserUrl || project.title;
-  const subtitle = project.subtitle || (project.category === 'E-Commerce' ? 'Ecommerce Website' : `${project.category} Application`);
+  const liveHref = normalizeUrl(project.liveUrl);
+  const browserTabTitle = project.browserUrl || (liveHref ? extractDomain(liveHref) : project.title);
 
   return (
     <div className="group relative flex flex-col rounded-2xl bg-[#090e1a]/90 border border-slate-800/90 hover:border-cyan-500/50 backdrop-blur-md overflow-hidden transition-all duration-300 hover:shadow-2xl hover:shadow-cyan-950/40 hover:-translate-y-1">
@@ -97,9 +99,9 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
             </Link>
           </h3>
 
-          {project.liveUrl ? (
+          {liveHref ? (
             <a
-              href={project.liveUrl}
+              href={liveHref}
               target="_blank"
               rel="noopener noreferrer"
               className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800/80 transition-colors shrink-0"
@@ -118,7 +120,7 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
           )}
         </div>
 
-        {/* Technology Badges Row (Exact Square Badges: HTML5 [5], CSS3 [3], JS [JS], Mongo/Node) */}
+        {/* Technology Badges Row */}
         <div className="flex items-center gap-2 mb-4">
           {displayBadges.map((tech) => (
             <TechnologyBadge 
@@ -132,7 +134,7 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
 
         {/* Description */}
         <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-5 line-clamp-3">
-          {project.description || project.shortDescription}
+          {project.shortDescription || project.description}
         </p>
 
         {/* Bottom Actions: Implementation Details & Live Website Button */}
@@ -145,9 +147,9 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
             <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
           </Link>
 
-          {project.liveUrl && (
+          {liveHref && (
             <a
-              href={project.liveUrl}
+              href={liveHref}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 hover:border-cyan-400 text-cyan-300 hover:text-white text-xs font-semibold transition-all shadow-sm group/btn"

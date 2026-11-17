@@ -26,6 +26,7 @@ import { SkillCard } from '../components/cards/SkillCard';
 import { TestimonialCard } from '../components/cards/TestimonialCard';
 import { ProcessSection } from '../components/common/ProcessSection';
 import { ContactForm } from '../components/forms/ContactForm';
+import { sanitizeWhatsappNumber } from '../lib/utils';
 
 export const Home: React.FC = () => {
   const { settings } = useSettings();
@@ -37,8 +38,12 @@ export const Home: React.FC = () => {
   const featuredProjects = projects.filter(p => p.featured).slice(0, 6);
   const highlightSkills = skills.slice(0, 8);
 
-  const whatsappUrl = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(
-    "Hi Vishwam, I found VP Creations and would like to discuss a website/project."
+  const brandName = settings.name || 'VP CREATIONS';
+  const brandTagline = settings.tagline || 'WE BUILD YOUR IDEAS';
+  const personName = settings.personName || 'VISHWA';
+
+  const whatsappUrl = `https://wa.me/${sanitizeWhatsappNumber(settings.whatsappNumber)}?text=${encodeURIComponent(
+    `Hi ${personName}, I found ${brandName} and would like to discuss a website/project.`
   )}`;
 
   return (
@@ -60,34 +65,39 @@ export const Home: React.FC = () => {
             {/* Brand Chip */}
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-950/60 border border-cyan-500/30 text-cyan-300 text-xs font-mono tracking-widest uppercase shadow-[0_0_20px_rgba(6,182,212,0.2)] mx-auto">
               <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
-              VP CREATIONS • WE BUILD YOUR IDEAS
+              {brandName} • {brandTagline}
             </div>
 
             {/* Sub-heading / Greeting */}
             <div className="space-y-2 text-center">
               <h2 className="text-xl sm:text-2xl font-mono text-slate-300 tracking-wide font-medium">
                 HI, I'M{' '}
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500 font-bold">
-                  VISHWAM KUMAR
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500 font-bold uppercase">
+                  {personName}
                 </span>
               </h2>
               <p className="text-xs sm:text-sm font-mono tracking-widest text-cyan-400 font-semibold uppercase">
-                A FULL STACK DEVELOPER
+                {settings.heroSubtitle || 'A FULL STACK DEVELOPER'}
               </p>
             </div>
 
             {/* Main Headline */}
             <h1 className="text-4xl sm:text-6xl md:text-7xl font-black text-white tracking-tight leading-[1.1] font-['Outfit'] text-center">
-              I TURN IDEAS INTO<br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500 underline decoration-cyan-500/30 underline-offset-8">
-                DIGITAL EXPERIENCES.
-              </span>
+              {settings.heroTitle && settings.heroTitle !== 'I TURN IDEAS INTO DIGITAL EXPERIENCES.' ? (
+                settings.heroTitle
+              ) : (
+                <>
+                  I TURN IDEAS INTO<br />
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500 underline decoration-cyan-500/30 underline-offset-8">
+                    DIGITAL EXPERIENCES.
+                  </span>
+                </>
+              )}
             </h1>
 
             {/* Description */}
             <p className="text-base sm:text-xl text-slate-300 leading-relaxed max-w-3xl mx-auto text-center">
-              I build modern websites, web applications and digital solutions that help businesses grow. 
-              Clean design, powerful functionality and real-world impact — that's what I create.
+              {settings.heroDescription || "I build modern websites, web applications and digital solutions that help businesses grow. Clean design, powerful functionality and real-world impact — that's what I create."}
             </p>
 
             {/* Action Buttons */}
@@ -128,8 +138,8 @@ export const Home: React.FC = () => {
             <div className="relative rounded-3xl p-2.5 bg-gradient-to-b from-cyan-500/30 via-slate-800 to-blue-600/20 shadow-2xl shadow-cyan-950/60">
               <div className="relative rounded-2xl overflow-hidden bg-slate-950 aspect-[16/9] sm:aspect-[21/9] md:aspect-[16/8]">
                 <img
-                  src="/images/hero-workspace.jpg"
-                  alt="Vishwam Kumar Software Workspace"
+                  src={settings.heroImage || '/images/hero-workspace.jpg'}
+                  alt={`${personName} Software Workspace`}
                   className="w-full h-full object-cover object-center transform hover:scale-105 transition-transform duration-700"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/20 to-transparent"></div>
@@ -137,9 +147,9 @@ export const Home: React.FC = () => {
                 {/* Integrated Logo Watermark */}
                 <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/80 border border-cyan-500/30 backdrop-blur-md">
                   <div className="w-5 h-5 rounded-md overflow-hidden">
-                    <img src="https://i.postimg.cc/WzcNTVqV/VP-logo.png" alt="VP" className="w-full h-full object-cover" />
+                    <img src="/images/vp-logo.jpg" alt="VP" className="w-full h-full object-cover" />
                   </div>
-                  <span className="text-[11px] font-mono font-bold text-white tracking-wider">VP CREATIONS</span>
+                  <span className="text-[11px] font-mono font-bold text-white tracking-wider">{brandName}</span>
                 </div>
 
                 {/* Active Status Badge */}
@@ -184,7 +194,7 @@ export const Home: React.FC = () => {
               
               <div className="p-6 rounded-2xl bg-slate-900/50 border border-slate-800/80 hover:border-cyan-500/40 transition-all text-center group">
                 <div className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-sky-400 font-['Outfit'] group-hover:scale-105 transition-transform duration-200 inline-block">
-                  10+
+                  {projects.length}+
                 </div>
                 <div className="text-sm font-semibold text-slate-200 mt-2">Projects Completed</div>
                 <div className="text-xs text-slate-400 font-mono mt-1">E-Commerce & Custom Web Apps</div>

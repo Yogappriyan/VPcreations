@@ -23,6 +23,7 @@ import {
 import { useProjects } from '../hooks/usePortfolioData';
 import { TechnologyBadge } from '../components/common/TechnologyBadge';
 import { Button } from '../components/common/Button';
+import { normalizeUrl } from '../lib/utils';
 
 export const Implementation: React.FC = () => {
   const { projects } = useProjects();
@@ -271,20 +272,24 @@ export const Implementation: React.FC = () => {
                   {/* Architecture snapshot */}
                   {proj.architecture && (
                     <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800/80 mb-5 space-y-2">
-                      <div className="text-[11px] font-mono text-cyan-300 flex items-center gap-1.5">
-                        <Code2 className="w-3.5 h-3.5" />
-                        <span>Frontend: {proj.architecture.frontend.split('with')[0]}</span>
-                      </div>
-                      <div className="text-[11px] font-mono text-blue-300 flex items-center gap-1.5">
-                        <CreditCard className="w-3.5 h-3.5" />
-                        <span>Payments: {proj.architecture.payments.split('with')[0]}</span>
-                      </div>
+                      {proj.architecture.frontend && (
+                        <div className="text-[11px] font-mono text-cyan-300 flex items-center gap-1.5">
+                          <Code2 className="w-3.5 h-3.5" />
+                          <span>Frontend: {proj.architecture.frontend.split('with')[0]}</span>
+                        </div>
+                      )}
+                      {proj.architecture.payments && (
+                        <div className="text-[11px] font-mono text-blue-300 flex items-center gap-1.5">
+                          <CreditCard className="w-3.5 h-3.5" />
+                          <span>Payments: {proj.architecture.payments.split('with')[0]}</span>
+                        </div>
+                      )}
                     </div>
                   )}
 
                   {/* Key Badges */}
                   <div className="flex items-center gap-2 mb-6">
-                    {(proj.keyBadges || proj.technologies.slice(0, 4)).map((t) => (
+                    {(proj.keyBadges || (proj.technologies || []).slice(0, 4)).map((t) => (
                       <TechnologyBadge key={t} name={t} variant="icon" size="sm" />
                     ))}
                   </div>
@@ -299,9 +304,9 @@ export const Implementation: React.FC = () => {
                     <ArrowRight className="w-4 h-4" />
                   </Link>
 
-                  {proj.liveUrl && (
+                  {normalizeUrl(proj.liveUrl) && (
                     <a
-                      href={proj.liveUrl}
+                      href={normalizeUrl(proj.liveUrl)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-xs font-mono text-slate-400 hover:text-white flex items-center gap-1"

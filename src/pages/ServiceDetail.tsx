@@ -21,6 +21,7 @@ import { useServices, useSettings } from '../hooks/usePortfolioData';
 import { TechnologyBadge } from '../components/common/TechnologyBadge';
 import { Button } from '../components/common/Button';
 import { ContactForm } from '../components/forms/ContactForm';
+import { sanitizeWhatsappNumber } from '../lib/utils';
 
 const iconMap: Record<string, React.ReactNode> = {
   Globe: <Globe className="w-10 h-10 text-cyan-400" />,
@@ -55,8 +56,8 @@ export const ServiceDetail: React.FC = () => {
 
   const icon = iconMap[service.icon] || <Globe className="w-10 h-10 text-cyan-400" />;
 
-  const whatsappUrl = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(
-    `Hi Vishwam, I'm interested in your ${service.title} service for my business.`
+  const whatsappUrl = `https://wa.me/${sanitizeWhatsappNumber(settings.whatsappNumber)}?text=${encodeURIComponent(
+    `Hi Vishwa, I'm interested in your ${service.title} service for my business.`
   )}`;
 
   return (
@@ -175,11 +176,11 @@ export const ServiceDetail: React.FC = () => {
               Initiate Your {service.title} Project
             </h3>
             <p className="text-slate-400 text-sm mt-2">
-              Send your project specifications directly to Vishwam Kumar for a quick turnaround estimate.
+              Send your project specifications directly to Vishwa for a quick turnaround estimate.
             </p>
           </div>
           <div className="max-w-3xl mx-auto">
-            <ContactForm />
+            <ContactForm defaultService={service.title} />
           </div>
         </div>
 

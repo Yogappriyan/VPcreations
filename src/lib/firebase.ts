@@ -9,7 +9,6 @@ import {
   deleteDoc, 
   query, 
   orderBy, 
-  addDoc,
   Firestore 
 } from 'firebase/firestore';
 import { 
@@ -44,6 +43,18 @@ import {
   defaultTestimonials, 
   defaultSettings 
 } from '../data/defaultData';
+import {
+  normalizeUrl,
+  sanitizeSlug,
+  sanitizeForFirestore,
+  emitDataSync
+} from './utils';
+import {
+  idbGet,
+  idbSet,
+  compressImageFileToDataUrl,
+  compressDataUrlIfOversized
+} from './storage';
 
 export interface FirebaseConfig {
   apiKey: string;
@@ -122,30 +133,85 @@ const LOCAL_KEYS = {
   projects: 'vp_portfolio_projects',
   deletedProjects: 'vp_portfolio_deleted_projects',
   services: 'vp_portfolio_services',
+  deletedServices: 'vp_portfolio_deleted_services',
   skills: 'vp_portfolio_skills',
+  deletedSkills: 'vp_portfolio_deleted_skills',
   experience: 'vp_portfolio_experience',
+  deletedExperience: 'vp_portfolio_deleted_experience',
   testimonials: 'vp_portfolio_testimonials',
+  deletedTestimonials: 'vp_portfolio_deleted_testimonials',
   enquiries: 'vp_portfolio_enquiries',
+  deletedEnquiries: 'vp_portfolio_deleted_enquiries',
   settings: 'vp_portfolio_settings',
   adminAuth: 'vp_admin_authenticated'
 };
 
+const LEGACY_SKIP_IDS = new Set([
+  'dressup-closets',
+  'n8n-business-pipeline',
+  'tiaara-clothing'
+]);
+
 function getLocal<T>(key: string, fallback: T): T {
   try {
     const item = localStorage.getItem(key);
-    if (!item) return fallback;
+    if (item === null) return fallback;
     return JSON.parse(item);
   } catch {
     return fallback;
   }
 }
 
-function setLocal<T>(key: string, value: T): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.error("Failed to write to localStorage:", e);
+async function readCache<T>(key: string, fallback: T): Promise<T> {
+  const idbVal = await idbGet<T>(key);
+  if (idbVal !== null && idbVal !== undefined) {
+    return idbVal;
   }
+  const lsVal = getLocal<T | null>(key, null);
+  if (lsVal !== null && lsVal !== undefined) {
+    void idbSet(key, lsVal);
+    return lsVal;
+  }
+  return fallback;
+}
+
+async function writeCache<T>(key: string, value: T): Promise<void> {
+  const savedToIdb = await idbSet(key, value);
+  const serialized = JSON.stringify(value);
+
+  try {
+    localStorage.setItem(key, serialized);
+    return;
+  } catch {
+    // If localStorage is full (5MB cap, typically caused by base64 images),
+    // preserve existing projects in IndexedDB and evict bloated localStorage projects cache so small keys succeed.
+    if (savedToIdb) {
+      try {
+        const existingLsProjects = getLocal<Project[] | null>(LOCAL_KEYS.projects, null);
+        if (existingLsProjects && key !== LOCAL_KEYS.projects) {
+          const existingIdbProjects = await idbGet<Project[]>(LOCAL_KEYS.projects);
+          if (!existingIdbProjects) {
+            await idbSet(LOCAL_KEYS.projects, existingLsProjects);
+          }
+        }
+        localStorage.removeItem(LOCAL_KEYS.projects);
+        if (key !== LOCAL_KEYS.projects) {
+          localStorage.setItem(key, serialized);
+        }
+      } catch {
+        // IndexedDB still has the authoritative data
+      }
+      return;
+    }
+
+    throw new Error('Unable to save changes to browser storage. Please use a smaller image or image URL.');
+  }
+}
+
+function isNewer(a?: string, b?: string): boolean {
+  if (!a) return false;
+  if (!b) return true;
+  return new Date(a).getTime() >= new Date(b).getTime();
 }
 
 // --- Dynamic CRUD API (Syncs with Firestore when available, otherwise uses resilient local persistence) ---
@@ -153,27 +219,39 @@ function setLocal<T>(key: string, value: T): void {
 export const DataService = {
   // SETTINGS
   async getSettings(): Promise<WebsiteSettings> {
+    const local = await readCache<WebsiteSettings & { updatedAt?: string }>(LOCAL_KEYS.settings, defaultSettings);
     if (firestoreInstance) {
       try {
         const col = collection(firestoreInstance, 'settings');
         const snap = await getDocs(col);
-        if (!snap.empty) {
-          const data = snap.docs[0].data() as WebsiteSettings;
-          setLocal(LOCAL_KEYS.settings, data);
-          return data;
+        const generalDoc = snap.docs.find(d => d.id === 'general') || snap.docs.find(d => d.id !== 'deleted_records');
+        if (generalDoc) {
+          const remote = { ...defaultSettings, ...generalDoc.data() } as WebsiteSettings & { updatedAt?: string };
+          if (local.updatedAt && !isNewer(remote.updatedAt, local.updatedAt)) {
+            return { ...defaultSettings, ...local };
+          }
+          await writeCache(LOCAL_KEYS.settings, remote);
+          return remote;
         }
       } catch (err) {
         console.warn("Firestore getSettings fallback to local cache:", err);
       }
     }
-    return getLocal<WebsiteSettings>(LOCAL_KEYS.settings, defaultSettings);
+    return { ...defaultSettings, ...local };
   },
 
   async saveSettings(settings: WebsiteSettings): Promise<void> {
-    setLocal(LOCAL_KEYS.settings, settings);
+    const payload = sanitizeForFirestore({
+      ...defaultSettings,
+      ...settings,
+      updatedAt: new Date().toISOString()
+    });
+    await writeCache(LOCAL_KEYS.settings, payload);
+    emitDataSync('settings');
+
     if (firestoreInstance) {
       try {
-        await setDoc(doc(firestoreInstance, 'settings', 'general'), settings, { merge: true });
+        await setDoc(doc(firestoreInstance, 'settings', 'general'), payload, { merge: true });
       } catch (err) {
         console.error("Failed to save settings to Firestore:", err);
       }
@@ -183,7 +261,7 @@ export const DataService = {
   // PROJECTS
   async getProjects(): Promise<Project[]> {
     // 1. Load set of deleted project IDs/slugs so deleted items never resurrect
-    const deletedList = getLocal<string[]>(LOCAL_KEYS.deletedProjects, []);
+    const deletedList = await readCache<string[]>(LOCAL_KEYS.deletedProjects, []);
     const deletedSet = new Set<string>(deletedList);
 
     if (firestoreInstance) {
@@ -193,7 +271,7 @@ export const DataService = {
           const data = delSnap.data();
           if (Array.isArray(data.deletedProjectIds)) {
             data.deletedProjectIds.forEach((dId: string) => deletedSet.add(dId));
-            setLocal(LOCAL_KEYS.deletedProjects, Array.from(deletedSet));
+            await writeCache(LOCAL_KEYS.deletedProjects, Array.from(deletedSet));
           }
         }
       } catch {
@@ -201,121 +279,125 @@ export const DataService = {
       }
     }
 
-    // 2. Authoritative base: default projects (excluding deleted and legacy mock items)
+    const isSkipped = (p: Partial<Project>, fallbackKey?: string) => {
+      const key = fallbackKey || p.id || p.slug || '';
+      return (
+        LEGACY_SKIP_IDS.has(key) ||
+        (p.id ? LEGACY_SKIP_IDS.has(p.id) || deletedSet.has(p.id) : false) ||
+        (p.slug ? LEGACY_SKIP_IDS.has(p.slug) || deletedSet.has(p.slug) : false) ||
+        deletedSet.has(key)
+      );
+    };
+
+    // 2. Seed initial map from defaultProjects (excluding deleted and legacy mock items)
     const projectMap = new Map<string, Project>();
     for (const dp of defaultProjects) {
       const dpKey = dp.id || dp.slug;
-      if (
-        dpKey === 'dressup-closets' || 
-        dpKey === 'n8n-business-pipeline' || 
-        dpKey === 'tiaara-clothing' ||
-        deletedSet.has(dp.id) ||
-        deletedSet.has(dp.slug) ||
-        deletedSet.has(dpKey)
-      ) {
-        continue;
-      }
+      if (isSkipped(dp, dpKey)) continue;
       projectMap.set(dpKey, { ...dp });
     }
 
-    // 3. Fetch from Firestore if available
+    // 3. Merge Firestore documents if available (Firestore overrides defaultProjects!)
     if (firestoreInstance) {
       try {
         const col = collection(firestoreInstance, 'projects');
         const snap = await getDocs(col);
-        
+
         snap.docs.forEach(d => {
           const docData = { ...d.data(), id: d.id } as Project;
           const key = docData.id || docData.slug;
-          
-          // Skip legacy obsolete mock IDs or user-deleted IDs
-          if (
-            key === 'dressup-closets' || 
-            key === 'n8n-business-pipeline' || 
-            key === 'tiaara-clothing' ||
-            deletedSet.has(docData.id) ||
-            deletedSet.has(docData.slug) ||
-            deletedSet.has(key)
-          ) {
-            return;
-          }
+          if (!key || isSkipped(docData, key)) return;
 
           if (projectMap.has(key)) {
             const base = projectMap.get(key)!;
-            const liveUrl = (docData.liveUrl && !docData.liveUrl.includes('example.com')) 
-              ? docData.liveUrl 
-              : base.liveUrl;
-
+            const liveUrl = docData.liveUrl && docData.liveUrl.includes('example.com')
+              ? base.liveUrl
+              : docData.liveUrl;
             projectMap.set(key, {
               ...base,
               ...docData,
-              liveUrl,
-              image: docData.image || base.image,
-              title: base.title,
-              category: base.category,
-              subtitle: base.subtitle,
-              description: base.description,
-              shortDescription: base.shortDescription,
-              order: base.order ?? docData.order
+              liveUrl: liveUrl !== undefined ? liveUrl : base.liveUrl
             });
           } else {
-            // User-added custom project from Admin
             projectMap.set(key, docData);
           }
         });
 
-        // If authenticated admin is browsing, only seed projects that have never been deleted
+        // Seed only non-deleted defaults on first connect when authenticated
         if (authInstance?.currentUser && snap.empty) {
           for (const dp of defaultProjects) {
             const dpKey = dp.id || dp.slug;
-            if (!deletedSet.has(dp.id) && !deletedSet.has(dp.slug) && !deletedSet.has(dpKey)) {
+            if (!isSkipped(dp, dpKey)) {
               try {
-                await setDoc(doc(firestoreInstance, 'projects', dpKey), dp, { merge: true });
-              } catch (syncErr) {
+                await setDoc(doc(firestoreInstance, 'projects', dpKey), sanitizeForFirestore(dp), { merge: true });
+              } catch {
                 // ignore permission error
               }
             }
           }
         }
       } catch (err) {
-        console.warn("Firestore getProjects notice (using resilient data source):", err);
+        console.warn("Firestore getProjects notice (using local cache):", err);
       }
     }
 
-    // 4. Check local cache for custom edits made in admin
-    const cached = getLocal<Project[]>(LOCAL_KEYS.projects, []);
+    // 4. Merge local/IndexedDB cache (preserves all local edits & additions, and beats stale Firestore if newer)
+    const cached = await readCache<Project[]>(LOCAL_KEYS.projects, []);
     if (Array.isArray(cached) && cached.length > 0) {
       for (const cp of cached) {
         const key = cp.id || cp.slug;
-        if (
-          key === 'dressup-closets' || 
-          key === 'n8n-business-pipeline' || 
-          key === 'tiaara-clothing' ||
-          deletedSet.has(cp.id) ||
-          deletedSet.has(cp.slug) ||
-          deletedSet.has(key)
-        ) {
-          continue;
-        }
-        if (!projectMap.has(key)) {
+        if (!key || isSkipped(cp, key)) continue;
+
+        if (projectMap.has(key)) {
+          const existing = projectMap.get(key)!;
+          if (!firestoreInstance || isNewer(cp.updatedAt, existing.updatedAt)) {
+            projectMap.set(key, { ...existing, ...cp });
+          }
+        } else {
           projectMap.set(key, cp);
         }
       }
     }
 
     const allProjects = Array.from(projectMap.values());
-    allProjects.sort((a, b) => (a.order || 99) - (b.order || 99));
+    allProjects.sort((a, b) => {
+      const orderDiff = (a.order ?? 99) - (b.order ?? 99);
+      if (orderDiff !== 0) return orderDiff;
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    });
 
-    // Cache updated list in localStorage
-    setLocal(LOCAL_KEYS.projects, allProjects);
+    await writeCache(LOCAL_KEYS.projects, allProjects);
     return allProjects;
   },
 
   async saveProject(project: Project): Promise<void> {
+    const cleanId = (project.id || '').trim() || `proj-${Date.now()}`;
+    const cleanSlug = sanitizeSlug(project.slug || project.title || cleanId) || cleanId;
+
+    // Automatically shrink oversized inline base64 images so both local storage and Firestore stay lean
+    const compressedCover = await compressDataUrlIfOversized((project.image || '').trim());
+    const compressedGallery = Array.isArray(project.gallery)
+      ? await Promise.all(project.gallery.map(img => compressDataUrlIfOversized(img)))
+      : undefined;
+
+    const savedProject: Project = {
+      ...project,
+      id: cleanId,
+      slug: cleanSlug,
+      title: (project.title || '').trim(),
+      image: compressedCover || '/images/topfashion.jpg',
+      gallery: compressedGallery,
+      liveUrl: normalizeUrl(project.liveUrl),
+      githubUrl: normalizeUrl(project.githubUrl),
+      technologies: Array.isArray(project.technologies) ? project.technologies : [],
+      createdAt: project.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
     // If saving/re-adding, remove from deleted tracking
-    const deletedList = getLocal<string[]>(LOCAL_KEYS.deletedProjects, []);
-    const updatedDeleted = deletedList.filter(d => d !== project.id && d !== project.slug);
-    setLocal(LOCAL_KEYS.deletedProjects, updatedDeleted);
+    const deletedList = await readCache<string[]>(LOCAL_KEYS.deletedProjects, []);
+    const updatedDeleted = deletedList.filter(d => d !== savedProject.id && d !== savedProject.slug);
+    await writeCache(LOCAL_KEYS.deletedProjects, updatedDeleted);
 
     if (firestoreInstance) {
       try {
@@ -324,26 +406,42 @@ export const DataService = {
           updatedAt: new Date().toISOString()
         }, { merge: true });
       } catch {
-        // ignore
+        // ignore if not authenticated in Firebase
       }
     }
 
     const projects = await this.getProjects();
-    const existingIndex = projects.findIndex(p => p.id === project.id || p.slug === project.slug);
+    let existingIndex = projects.findIndex(p => p.id === savedProject.id);
+    if (existingIndex < 0) {
+      existingIndex = projects.findIndex(p => p.slug === savedProject.slug);
+    }
+
     let updated: Project[];
     if (existingIndex >= 0) {
       updated = [...projects];
-      updated[existingIndex] = { ...project, updatedAt: new Date().toISOString() };
+      updated[existingIndex] = savedProject;
     } else {
-      updated = [{ ...project, createdAt: new Date().toISOString() }, ...projects];
+      updated = [savedProject, ...projects];
     }
-    setLocal(LOCAL_KEYS.projects, updated);
+
+    updated.sort((a, b) => {
+      const orderDiff = (a.order ?? 99) - (b.order ?? 99);
+      if (orderDiff !== 0) return orderDiff;
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    });
+
+    await writeCache(LOCAL_KEYS.projects, updated);
+    emitDataSync('projects');
 
     if (firestoreInstance) {
       try {
-        await setDoc(doc(firestoreInstance, 'projects', project.id || project.slug), project, { merge: true });
+        await setDoc(
+          doc(firestoreInstance, 'projects', savedProject.id),
+          sanitizeForFirestore(savedProject),
+          { merge: true }
+        );
       } catch (err) {
-        console.error("Firestore saveProject error:", err);
+        console.warn("Firestore saveProject failed (saved locally):", err);
       }
     }
   },
@@ -352,280 +450,461 @@ export const DataService = {
     const normId = (id || '').trim();
     if (!normId) return;
 
-    // 1. Mark as permanently deleted in deleted tracking
-    const deletedList = getLocal<string[]>(LOCAL_KEYS.deletedProjects, []);
+    const deletedList = await readCache<string[]>(LOCAL_KEYS.deletedProjects, []);
     if (!deletedList.includes(normId)) {
       deletedList.push(normId);
     }
 
-    // Also look up in cached projects to find associated slug or id
-    const cached = getLocal<Project[]>(LOCAL_KEYS.projects, []);
-    const target = cached.find(p => p.id === normId || p.slug === normId) 
+    const cached = await readCache<Project[]>(LOCAL_KEYS.projects, []);
+    const target = cached.find(p => p.id === normId || p.slug === normId)
       || defaultProjects.find(p => p.id === normId || p.slug === normId);
 
     if (target) {
       if (target.id && !deletedList.includes(target.id)) deletedList.push(target.id);
       if (target.slug && !deletedList.includes(target.slug)) deletedList.push(target.slug);
     }
-    setLocal(LOCAL_KEYS.deletedProjects, deletedList);
+    await writeCache(LOCAL_KEYS.deletedProjects, deletedList);
 
-    // 2. Remove immediately from local cached projects
-    const filtered = cached.filter(p => p.id !== normId && p.slug !== normId && (target ? p.id !== target.id && p.slug !== target.slug : true));
-    setLocal(LOCAL_KEYS.projects, filtered);
+    const filtered = cached.filter(
+      p => p.id !== normId && p.slug !== normId && (target ? p.id !== target.id && p.slug !== target.slug : true)
+    );
+    await writeCache(LOCAL_KEYS.projects, filtered);
+    emitDataSync('projects');
 
-    // 3. Remove document from Firestore
     if (firestoreInstance) {
       try {
         await deleteDoc(doc(firestoreInstance, 'projects', normId));
-        if (target && target.slug && target.slug !== normId) {
+        if (target?.slug && target.slug !== normId) {
           await deleteDoc(doc(firestoreInstance, 'projects', target.slug));
         }
-        if (target && target.id && target.id !== normId) {
+        if (target?.id && target.id !== normId) {
           await deleteDoc(doc(firestoreInstance, 'projects', target.id));
         }
-        // Save deleted tracking in Firestore
         await setDoc(doc(firestoreInstance, 'settings', 'deleted_records'), {
           deletedProjectIds: deletedList,
           updatedAt: new Date().toISOString()
         }, { merge: true });
       } catch (err) {
-        console.error("Firestore deleteProject error:", err);
+        console.warn("Firestore deleteProject notice (deleted locally):", err);
       }
     }
   },
 
   // SERVICES
   async getServices(): Promise<Service[]> {
+    const deletedSet = new Set<string>(await readCache<string[]>(LOCAL_KEYS.deletedServices, []));
+    const localList = await readCache<Service[] | null>(LOCAL_KEYS.services, null);
+
     if (firestoreInstance) {
       try {
         const col = collection(firestoreInstance, 'services');
         const snap = await getDocs(col);
         if (!snap.empty) {
-          const list = snap.docs.map(d => ({ ...d.data(), id: d.id } as Service));
-          list.sort((a, b) => (a.order || 99) - (b.order || 99));
-          setLocal(LOCAL_KEYS.services, list);
+          const map = new Map<string, Service>();
+          snap.docs.forEach(d => {
+            const item = { ...d.data(), id: d.id } as Service;
+            if (!deletedSet.has(item.id) && !deletedSet.has(item.slug)) {
+              map.set(item.id, item);
+            }
+          });
+          if (localList) {
+            for (const ls of localList) {
+              if (!deletedSet.has(ls.id) && !deletedSet.has(ls.slug)) {
+                const remote = map.get(ls.id) as (Service & { updatedAt?: string }) | undefined;
+                const localItem = ls as Service & { updatedAt?: string };
+                if (!remote || isNewer(localItem.updatedAt, remote.updatedAt)) {
+                  map.set(ls.id, ls);
+                }
+              }
+            }
+          }
+          const list = Array.from(map.values()).sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+          await writeCache(LOCAL_KEYS.services, list);
           return list;
         }
       } catch (err) {
         console.warn("Firestore getServices fallback to local cache:", err);
       }
     }
-    return getLocal<Service[]>(LOCAL_KEYS.services, defaultServices);
+
+    if (localList !== null) {
+      return localList.filter(s => !deletedSet.has(s.id) && !deletedSet.has(s.slug));
+    }
+    return defaultServices.filter(s => !deletedSet.has(s.id) && !deletedSet.has(s.slug));
   },
 
   async saveService(service: Service): Promise<void> {
+    const cleanId = (service.id || '').trim() || `serv-${Date.now()}`;
+    const cleanSlug = sanitizeSlug(service.slug || service.title || cleanId) || cleanId;
+    const savedService = {
+      ...service,
+      id: cleanId,
+      slug: cleanSlug,
+      updatedAt: new Date().toISOString()
+    };
+
+    const deleted = (await readCache<string[]>(LOCAL_KEYS.deletedServices, [])).filter(
+      d => d !== savedService.id && d !== savedService.slug
+    );
+    await writeCache(LOCAL_KEYS.deletedServices, deleted);
+
     const services = await this.getServices();
-    const index = services.findIndex(s => s.id === service.id || s.slug === service.slug);
+    const index = services.findIndex(s => s.id === savedService.id || s.slug === savedService.slug);
     let updated: Service[];
     if (index >= 0) {
       updated = [...services];
-      updated[index] = service;
+      updated[index] = savedService;
     } else {
-      updated = [...services, service];
+      updated = [...services, savedService];
     }
-    setLocal(LOCAL_KEYS.services, updated);
+    updated.sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+    await writeCache(LOCAL_KEYS.services, updated);
+    emitDataSync('services');
 
     if (firestoreInstance) {
       try {
-        await setDoc(doc(firestoreInstance, 'services', service.id || service.slug), service, { merge: true });
+        await setDoc(
+          doc(firestoreInstance, 'services', savedService.id),
+          sanitizeForFirestore(savedService),
+          { merge: true }
+        );
       } catch (err) {
-        console.error("Firestore saveService error:", err);
+        console.warn("Firestore saveService notice (saved locally):", err);
       }
     }
   },
 
   async deleteService(id: string): Promise<void> {
+    const deleted = await readCache<string[]>(LOCAL_KEYS.deletedServices, []);
+    if (!deleted.includes(id)) deleted.push(id);
+    await writeCache(LOCAL_KEYS.deletedServices, deleted);
+
     const services = await this.getServices();
-    const filtered = services.filter(s => s.id !== id);
-    setLocal(LOCAL_KEYS.services, filtered);
+    const filtered = services.filter(s => s.id !== id && s.slug !== id);
+    await writeCache(LOCAL_KEYS.services, filtered);
+    emitDataSync('services');
 
     if (firestoreInstance) {
       try {
         await deleteDoc(doc(firestoreInstance, 'services', id));
       } catch (err) {
-        console.error("Firestore deleteService error:", err);
+        console.warn("Firestore deleteService notice (deleted locally):", err);
       }
     }
   },
 
   // SKILLS
   async getSkills(): Promise<Skill[]> {
+    const deletedSet = new Set<string>(await readCache<string[]>(LOCAL_KEYS.deletedSkills, []));
+    const localList = await readCache<Skill[] | null>(LOCAL_KEYS.skills, null);
+
     if (firestoreInstance) {
       try {
         const col = collection(firestoreInstance, 'skills');
         const snap = await getDocs(col);
         if (!snap.empty) {
-          const list = snap.docs.map(d => ({ ...d.data(), id: d.id } as Skill));
-          list.sort((a, b) => (a.order || 99) - (b.order || 99));
-          setLocal(LOCAL_KEYS.skills, list);
+          const map = new Map<string, Skill>();
+          snap.docs.forEach(d => {
+            const item = { ...d.data(), id: d.id } as Skill;
+            if (!deletedSet.has(item.id)) map.set(item.id, item);
+          });
+          if (localList) {
+            for (const ls of localList) {
+              if (!deletedSet.has(ls.id)) {
+                const remote = map.get(ls.id) as (Skill & { updatedAt?: string }) | undefined;
+                const localItem = ls as Skill & { updatedAt?: string };
+                if (!remote || isNewer(localItem.updatedAt, remote.updatedAt)) {
+                  map.set(ls.id, ls);
+                }
+              }
+            }
+          }
+          const list = Array.from(map.values()).sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+          await writeCache(LOCAL_KEYS.skills, list);
           return list;
         }
       } catch (err) {
         console.warn("Firestore getSkills fallback:", err);
       }
     }
-    return getLocal<Skill[]>(LOCAL_KEYS.skills, defaultSkills);
+
+    if (localList !== null) {
+      return localList.filter(s => !deletedSet.has(s.id));
+    }
+    return defaultSkills.filter(s => !deletedSet.has(s.id));
   },
 
   async saveSkill(skill: Skill): Promise<void> {
+    const savedSkill = {
+      ...skill,
+      id: (skill.id || '').trim() || `skill-${Date.now()}`,
+      updatedAt: new Date().toISOString()
+    };
+
+    const deleted = (await readCache<string[]>(LOCAL_KEYS.deletedSkills, [])).filter(d => d !== savedSkill.id);
+    await writeCache(LOCAL_KEYS.deletedSkills, deleted);
+
     const skills = await this.getSkills();
-    const idx = skills.findIndex(s => s.id === skill.id);
+    const idx = skills.findIndex(s => s.id === savedSkill.id);
     let updated: Skill[];
     if (idx >= 0) {
       updated = [...skills];
-      updated[idx] = skill;
+      updated[idx] = savedSkill;
     } else {
-      updated = [...skills, skill];
+      updated = [...skills, savedSkill];
     }
-    setLocal(LOCAL_KEYS.skills, updated);
+    updated.sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+    await writeCache(LOCAL_KEYS.skills, updated);
+    emitDataSync('skills');
 
     if (firestoreInstance) {
       try {
-        await setDoc(doc(firestoreInstance, 'skills', skill.id), skill, { merge: true });
+        await setDoc(doc(firestoreInstance, 'skills', savedSkill.id), sanitizeForFirestore(savedSkill), { merge: true });
       } catch (err) {
-        console.error("Firestore saveSkill error:", err);
+        console.warn("Firestore saveSkill notice (saved locally):", err);
       }
     }
   },
 
   async deleteSkill(id: string): Promise<void> {
+    const deleted = await readCache<string[]>(LOCAL_KEYS.deletedSkills, []);
+    if (!deleted.includes(id)) deleted.push(id);
+    await writeCache(LOCAL_KEYS.deletedSkills, deleted);
+
     const skills = await this.getSkills();
     const filtered = skills.filter(s => s.id !== id);
-    setLocal(LOCAL_KEYS.skills, filtered);
+    await writeCache(LOCAL_KEYS.skills, filtered);
+    emitDataSync('skills');
 
     if (firestoreInstance) {
       try {
         await deleteDoc(doc(firestoreInstance, 'skills', id));
       } catch (err) {
-        console.error("Firestore deleteSkill error:", err);
+        console.warn("Firestore deleteSkill notice (deleted locally):", err);
       }
     }
   },
 
   // EXPERIENCE
   async getExperience(): Promise<Experience[]> {
+    const deletedSet = new Set<string>(await readCache<string[]>(LOCAL_KEYS.deletedExperience, []));
+    const localList = await readCache<Experience[] | null>(LOCAL_KEYS.experience, null);
+
     if (firestoreInstance) {
       try {
         const col = collection(firestoreInstance, 'experience');
         const snap = await getDocs(col);
         if (!snap.empty) {
-          const list = snap.docs.map(d => ({ ...d.data(), id: d.id } as Experience));
-          list.sort((a, b) => (a.order || 99) - (b.order || 99));
-          setLocal(LOCAL_KEYS.experience, list);
+          const map = new Map<string, Experience>();
+          snap.docs.forEach(d => {
+            const item = { ...d.data(), id: d.id } as Experience;
+            if (!deletedSet.has(item.id)) map.set(item.id, item);
+          });
+          if (localList) {
+            for (const le of localList) {
+              if (!deletedSet.has(le.id)) {
+                const remote = map.get(le.id) as (Experience & { updatedAt?: string }) | undefined;
+                const localItem = le as Experience & { updatedAt?: string };
+                if (!remote || isNewer(localItem.updatedAt, remote.updatedAt)) {
+                  map.set(le.id, le);
+                }
+              }
+            }
+          }
+          const list = Array.from(map.values()).sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+          await writeCache(LOCAL_KEYS.experience, list);
           return list;
         }
       } catch (err) {
         console.warn("Firestore getExperience fallback:", err);
       }
     }
-    return getLocal<Experience[]>(LOCAL_KEYS.experience, defaultExperiences);
+
+    if (localList !== null) {
+      return localList.filter(e => !deletedSet.has(e.id));
+    }
+    return defaultExperiences.filter(e => !deletedSet.has(e.id));
   },
 
   async saveExperience(exp: Experience): Promise<void> {
+    const savedExp = {
+      ...exp,
+      id: (exp.id || '').trim() || `exp-${Date.now()}`,
+      updatedAt: new Date().toISOString()
+    };
+
+    const deleted = (await readCache<string[]>(LOCAL_KEYS.deletedExperience, [])).filter(d => d !== savedExp.id);
+    await writeCache(LOCAL_KEYS.deletedExperience, deleted);
+
     const list = await this.getExperience();
-    const idx = list.findIndex(e => e.id === exp.id);
+    const idx = list.findIndex(e => e.id === savedExp.id);
     let updated: Experience[];
     if (idx >= 0) {
       updated = [...list];
-      updated[idx] = exp;
+      updated[idx] = savedExp;
     } else {
-      updated = [...list, exp];
+      updated = [...list, savedExp];
     }
-    setLocal(LOCAL_KEYS.experience, updated);
+    updated.sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+    await writeCache(LOCAL_KEYS.experience, updated);
+    emitDataSync('experience');
 
     if (firestoreInstance) {
       try {
-        await setDoc(doc(firestoreInstance, 'experience', exp.id), exp, { merge: true });
+        await setDoc(doc(firestoreInstance, 'experience', savedExp.id), sanitizeForFirestore(savedExp), { merge: true });
       } catch (err) {
-        console.error("Firestore saveExperience error:", err);
+        console.warn("Firestore saveExperience notice (saved locally):", err);
       }
     }
   },
 
   async deleteExperience(id: string): Promise<void> {
+    const deleted = await readCache<string[]>(LOCAL_KEYS.deletedExperience, []);
+    if (!deleted.includes(id)) deleted.push(id);
+    await writeCache(LOCAL_KEYS.deletedExperience, deleted);
+
     const list = await this.getExperience();
     const filtered = list.filter(e => e.id !== id);
-    setLocal(LOCAL_KEYS.experience, filtered);
+    await writeCache(LOCAL_KEYS.experience, filtered);
+    emitDataSync('experience');
 
     if (firestoreInstance) {
       try {
         await deleteDoc(doc(firestoreInstance, 'experience', id));
       } catch (err) {
-        console.error("Firestore deleteExperience error:", err);
+        console.warn("Firestore deleteExperience notice (deleted locally):", err);
       }
     }
   },
 
   // TESTIMONIALS
   async getTestimonials(): Promise<Testimonial[]> {
+    const deletedSet = new Set<string>(await readCache<string[]>(LOCAL_KEYS.deletedTestimonials, []));
+    const localList = await readCache<Testimonial[] | null>(LOCAL_KEYS.testimonials, null);
+
     if (firestoreInstance) {
       try {
         const col = collection(firestoreInstance, 'testimonials');
         const snap = await getDocs(col);
         if (!snap.empty) {
-          const list = snap.docs.map(d => ({ ...d.data(), id: d.id } as Testimonial));
-          setLocal(LOCAL_KEYS.testimonials, list);
+          const map = new Map<string, Testimonial>();
+          snap.docs.forEach(d => {
+            const item = { ...d.data(), id: d.id } as Testimonial;
+            if (!deletedSet.has(item.id)) map.set(item.id, item);
+          });
+          if (localList) {
+            for (const lt of localList) {
+              if (!deletedSet.has(lt.id)) {
+                const remote = map.get(lt.id) as (Testimonial & { updatedAt?: string }) | undefined;
+                const localItem = lt as Testimonial & { updatedAt?: string };
+                if (!remote || isNewer(localItem.updatedAt, remote.updatedAt)) {
+                  map.set(lt.id, lt);
+                }
+              }
+            }
+          }
+          const list = Array.from(map.values());
+          await writeCache(LOCAL_KEYS.testimonials, list);
           return list;
         }
       } catch (err) {
         console.warn("Firestore getTestimonials fallback:", err);
       }
     }
-    return getLocal<Testimonial[]>(LOCAL_KEYS.testimonials, defaultTestimonials);
+
+    if (localList !== null) {
+      return localList.filter(t => !deletedSet.has(t.id));
+    }
+    return defaultTestimonials.filter(t => !deletedSet.has(t.id));
   },
 
   async saveTestimonial(test: Testimonial): Promise<void> {
+    const savedTest = {
+      ...test,
+      id: (test.id || '').trim() || `test-${Date.now()}`,
+      updatedAt: new Date().toISOString()
+    };
+
+    const deleted = (await readCache<string[]>(LOCAL_KEYS.deletedTestimonials, [])).filter(d => d !== savedTest.id);
+    await writeCache(LOCAL_KEYS.deletedTestimonials, deleted);
+
     const list = await this.getTestimonials();
-    const idx = list.findIndex(t => t.id === test.id);
+    const idx = list.findIndex(t => t.id === savedTest.id);
     let updated: Testimonial[];
     if (idx >= 0) {
       updated = [...list];
-      updated[idx] = test;
+      updated[idx] = savedTest;
     } else {
-      updated = [test, ...list];
+      updated = [savedTest, ...list];
     }
-    setLocal(LOCAL_KEYS.testimonials, updated);
+    await writeCache(LOCAL_KEYS.testimonials, updated);
+    emitDataSync('testimonials');
 
     if (firestoreInstance) {
       try {
-        await setDoc(doc(firestoreInstance, 'testimonials', test.id), test, { merge: true });
+        await setDoc(doc(firestoreInstance, 'testimonials', savedTest.id), sanitizeForFirestore(savedTest), { merge: true });
       } catch (err) {
-        console.error("Firestore saveTestimonial error:", err);
+        console.warn("Firestore saveTestimonial notice (saved locally):", err);
       }
     }
   },
 
   async deleteTestimonial(id: string): Promise<void> {
+    const deleted = await readCache<string[]>(LOCAL_KEYS.deletedTestimonials, []);
+    if (!deleted.includes(id)) deleted.push(id);
+    await writeCache(LOCAL_KEYS.deletedTestimonials, deleted);
+
     const list = await this.getTestimonials();
     const filtered = list.filter(t => t.id !== id);
-    setLocal(LOCAL_KEYS.testimonials, filtered);
+    await writeCache(LOCAL_KEYS.testimonials, filtered);
+    emitDataSync('testimonials');
 
     if (firestoreInstance) {
       try {
         await deleteDoc(doc(firestoreInstance, 'testimonials', id));
       } catch (err) {
-        console.error("Firestore deleteTestimonial error:", err);
+        console.warn("Firestore deleteTestimonial notice (deleted locally):", err);
       }
     }
   },
 
   // ENQUIRIES / CONTACT
   async getEnquiries(): Promise<Enquiry[]> {
+    const deletedSet = new Set<string>(await readCache<string[]>(LOCAL_KEYS.deletedEnquiries, []));
+    const localList = await readCache<Enquiry[] | null>(LOCAL_KEYS.enquiries, null);
+
     if (firestoreInstance) {
       try {
         const col = collection(firestoreInstance, 'enquiries');
         const snap = await getDocs(col);
         if (!snap.empty) {
-          const list = snap.docs.map(d => ({ ...d.data(), id: d.id } as Enquiry));
-          list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-          setLocal(LOCAL_KEYS.enquiries, list);
+          const map = new Map<string, Enquiry>();
+          snap.docs.forEach(d => {
+            const item = { ...d.data(), id: d.id } as Enquiry;
+            if (!deletedSet.has(item.id)) map.set(item.id, item);
+          });
+          if (localList) {
+            for (const le of localList) {
+              if (!deletedSet.has(le.id) && !map.has(le.id)) {
+                map.set(le.id, le);
+              }
+            }
+          }
+          const list = Array.from(map.values());
+          list.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+          await writeCache(LOCAL_KEYS.enquiries, list);
           return list;
         }
       } catch (err) {
         console.warn("Firestore getEnquiries fallback:", err);
       }
     }
-    return getLocal<Enquiry[]>(LOCAL_KEYS.enquiries, [
+
+    if (localList !== null) {
+      return localList.filter(e => !deletedSet.has(e.id));
+    }
+
+    const defaultSample: Enquiry[] = [
       {
         id: "enq-sample-1",
         name: "Aman Gupta",
@@ -639,7 +918,8 @@ export const DataService = {
         status: "New",
         read: false
       }
-    ]);
+    ];
+    return defaultSample.filter(e => !deletedSet.has(e.id));
   },
 
   async submitEnquiry(data: Omit<Enquiry, 'id' | 'date' | 'status' | 'read'>): Promise<Enquiry> {
@@ -652,13 +932,14 @@ export const DataService = {
     };
 
     const current = await this.getEnquiries();
-    setLocal(LOCAL_KEYS.enquiries, [newEnquiry, ...current]);
+    await writeCache(LOCAL_KEYS.enquiries, [newEnquiry, ...current]);
+    emitDataSync('enquiries');
 
     if (firestoreInstance) {
       try {
-        await addDoc(collection(firestoreInstance, 'enquiries'), newEnquiry);
+        await setDoc(doc(firestoreInstance, 'enquiries', newEnquiry.id), sanitizeForFirestore(newEnquiry));
       } catch (err) {
-        console.error("Firestore submitEnquiry error:", err);
+        console.warn("Firestore submitEnquiry notice (saved locally):", err);
       }
     }
     return newEnquiry;
@@ -667,27 +948,33 @@ export const DataService = {
   async updateEnquiryStatus(id: string, status: Enquiry['status'], read = true): Promise<void> {
     const list = await this.getEnquiries();
     const updated = list.map(item => item.id === id ? { ...item, status, read } : item);
-    setLocal(LOCAL_KEYS.enquiries, updated);
+    await writeCache(LOCAL_KEYS.enquiries, updated);
+    emitDataSync('enquiries');
 
     if (firestoreInstance) {
       try {
         await setDoc(doc(firestoreInstance, 'enquiries', id), { status, read }, { merge: true });
       } catch (err) {
-        console.error("Firestore updateEnquiryStatus error:", err);
+        console.warn("Firestore updateEnquiryStatus notice:", err);
       }
     }
   },
 
   async deleteEnquiry(id: string): Promise<void> {
+    const deleted = await readCache<string[]>(LOCAL_KEYS.deletedEnquiries, []);
+    if (!deleted.includes(id)) deleted.push(id);
+    await writeCache(LOCAL_KEYS.deletedEnquiries, deleted);
+
     const list = await this.getEnquiries();
     const filtered = list.filter(e => e.id !== id);
-    setLocal(LOCAL_KEYS.enquiries, filtered);
+    await writeCache(LOCAL_KEYS.enquiries, filtered);
+    emitDataSync('enquiries');
 
     if (firestoreInstance) {
       try {
         await deleteDoc(doc(firestoreInstance, 'enquiries', id));
       } catch (err) {
-        console.error("Firestore deleteEnquiry error:", err);
+        console.warn("Firestore deleteEnquiry notice (deleted locally):", err);
       }
     }
   },
@@ -698,32 +985,32 @@ export const DataService = {
       return { success: false, message: "Firebase is not configured yet. Please configure Firebase keys first." };
     }
     try {
-      // 1. Settings
-      await setDoc(doc(firestoreInstance, 'settings', 'general'), defaultSettings, { merge: true });
-      
-      // 2. Services
-      for (const service of defaultServices) {
-        await setDoc(doc(firestoreInstance, 'services', service.id), service, { merge: true });
+      const currentSettings = await this.getSettings();
+      await setDoc(doc(firestoreInstance, 'settings', 'general'), sanitizeForFirestore(currentSettings), { merge: true });
+
+      const currentServices = await this.getServices();
+      for (const service of currentServices) {
+        await setDoc(doc(firestoreInstance, 'services', service.id), sanitizeForFirestore(service), { merge: true });
       }
 
-      // 3. Projects
-      for (const project of defaultProjects) {
-        await setDoc(doc(firestoreInstance, 'projects', project.id), project, { merge: true });
+      const currentProjects = await this.getProjects();
+      for (const project of currentProjects) {
+        await setDoc(doc(firestoreInstance, 'projects', project.id), sanitizeForFirestore(project), { merge: true });
       }
 
-      // 4. Skills
-      for (const skill of defaultSkills) {
-        await setDoc(doc(firestoreInstance, 'skills', skill.id), skill, { merge: true });
+      const currentSkills = await this.getSkills();
+      for (const skill of currentSkills) {
+        await setDoc(doc(firestoreInstance, 'skills', skill.id), sanitizeForFirestore(skill), { merge: true });
       }
 
-      // 5. Experience
-      for (const exp of defaultExperiences) {
-        await setDoc(doc(firestoreInstance, 'experience', exp.id), exp, { merge: true });
+      const currentExp = await this.getExperience();
+      for (const exp of currentExp) {
+        await setDoc(doc(firestoreInstance, 'experience', exp.id), sanitizeForFirestore(exp), { merge: true });
       }
 
-      // 6. Testimonials
-      for (const test of defaultTestimonials) {
-        await setDoc(doc(firestoreInstance, 'testimonials', test.id), test, { merge: true });
+      const currentTests = await this.getTestimonials();
+      for (const test of currentTests) {
+        await setDoc(doc(firestoreInstance, 'testimonials', test.id), sanitizeForFirestore(test), { merge: true });
       }
 
       return { success: true, message: "Successfully synced all portfolio data to Firebase Firestore!" };
@@ -733,7 +1020,7 @@ export const DataService = {
     }
   },
 
-  // IMAGE UPLOADER: Handles Firebase Storage or returns base64 data URL
+  // IMAGE UPLOADER: Handles Firebase Storage or compressed base64 data URL
   async uploadImage(file: File, folder = 'projects'): Promise<string> {
     if (storageInstance) {
       try {
@@ -741,16 +1028,10 @@ export const DataService = {
         await uploadBytes(fileRef, file);
         return await getDownloadURL(fileRef);
       } catch (err) {
-        console.warn("Storage upload failed, falling back to local object URL:", err);
+        console.warn("Storage upload failed, falling back to compressed image data URL:", err);
       }
     }
 
-    // Fallback: Read as base64 data URL for local persistence
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+    return compressImageFileToDataUrl(file);
   }
 };

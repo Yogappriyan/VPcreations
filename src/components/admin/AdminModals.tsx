@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { AlertCircle, Loader2 } from 'lucide-react';
 import { Service, Skill, Experience, Testimonial } from '../../types';
 import { Modal } from '../common/Modal';
+import { sanitizeSlug } from '../../lib/utils';
 
 // --- SERVICE MODAL ---
 interface ServiceModalProps {
@@ -30,8 +32,12 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({
   const [featuresText, setFeaturesText] = useState('');
   const [benefitsText, setBenefitsText] = useState('');
   const [techText, setTechText] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setError(null);
+    setSaving(false);
     if (serviceToEdit) {
       setFormData(serviceToEdit);
       setFeaturesText((serviceToEdit.features || []).join('\n'));
@@ -56,26 +62,30 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({
   }, [serviceToEdit, isOpen]);
 
   const handleTitleChange = (val: string) => {
-    const slug = val
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)+/g, '');
+    const slug = sanitizeSlug(val);
     setFormData(prev => ({
       ...prev,
       title: val,
-      slug: prev.slug && serviceToEdit ? prev.slug : slug
+      slug: serviceToEdit ? prev.slug : slug
     }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.title || !formData.slug) return;
+    setError(null);
+    const trimmedTitle = (formData.title || '').trim();
+    const finalSlug = sanitizeSlug(formData.slug || trimmedTitle);
+    if (!trimmedTitle || !finalSlug) {
+      setError('Service title and slug are required.');
+      return;
+    }
 
     const service: Service = {
+      ...(serviceToEdit || {}),
       id: serviceToEdit?.id || 'serv-' + Date.now(),
-      title: formData.title,
-      slug: formData.slug,
-      description: formData.description || '',
+      title: trimmedTitle,
+      slug: finalSlug,
+      description: (formData.description || '').trim(),
       icon: formData.icon || 'Globe',
       features: featuresText.split('\n').map(s => s.trim()).filter(Boolean),
       benefits: benefitsText.split('\n').map(s => s.trim()).filter(Boolean),
@@ -85,13 +95,27 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({
       createdAt: serviceToEdit?.createdAt || new Date().toISOString()
     };
 
-    await onSave(service);
-    onClose();
+    setSaving(true);
+    try {
+      await onSave(service);
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save service.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={serviceToEdit ? 'Edit Service' : 'Add Service'} maxWidth="max-w-2xl">
       <form onSubmit={handleSubmit} className="space-y-4">
+        {error && (
+          <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            <span>{error}</span>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-mono text-slate-300 uppercase mb-1">Service Title *</label>
@@ -188,9 +212,25 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({
           />
         </div>
 
+        <div className="flex items-center gap-2 pt-1">
+          <input
+            type="checkbox"
+            id="featured_service"
+            checked={!!formData.featured}
+            onChange={(e) => setFormData({ ...formData, featured: e.target.checked })}
+            className="rounded bg-slate-950 border-slate-800 text-cyan-400 focus:ring-cyan-400 w-4 h-4"
+          />
+          <label htmlFor="featured_service" className="text-sm text-slate-300 cursor-pointer">
+            Featured Service
+          </label>
+        </div>
+
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
-          <button type="submit" className="px-5 py-2 text-sm font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg">Save Service</button>
+          <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
+          <button type="submit" disabled={saving} className="px-5 py-2 text-sm font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg cursor-pointer disabled:opacity-50 inline-flex items-center gap-2">
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            {saving ? 'Saving...' : 'Save Service'}
+          </button>
         </div>
       </form>
     </Modal>
@@ -217,8 +257,12 @@ export const SkillModal: React.FC<SkillModalProps> = ({
     level: 90,
     order: 1
   });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setError(null);
+    setSaving(false);
     if (skillToEdit) {
       setFormData(skillToEdit);
     } else {
@@ -228,23 +272,43 @@ export const SkillModal: React.FC<SkillModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name) return;
+    setError(null);
+    const trimmedName = (formData.name || '').trim();
+    if (!trimmedName) {
+      setError('Skill name is required.');
+      return;
+    }
 
     const skill: Skill = {
+      ...(skillToEdit || {}),
       id: skillToEdit?.id || 'skill-' + Date.now(),
-      name: formData.name,
+      name: trimmedName,
       category: formData.category || 'Frontend',
       level: Number(formData.level) || 80,
       order: Number(formData.order) || 1
     };
 
-    await onSave(skill);
-    onClose();
+    setSaving(true);
+    try {
+      await onSave(skill);
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save skill.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={skillToEdit ? 'Edit Skill' : 'Add Skill'} maxWidth="max-w-md">
       <form onSubmit={handleSubmit} className="space-y-4">
+        {error && (
+          <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            <span>{error}</span>
+          </div>
+        )}
+
         <div>
           <label className="block text-xs font-mono text-slate-300 uppercase mb-1">Skill Name *</label>
           <input
@@ -261,7 +325,7 @@ export const SkillModal: React.FC<SkillModalProps> = ({
           <label className="block text-xs font-mono text-slate-300 uppercase mb-1">Category</label>
           <select
             value={formData.category || 'Frontend'}
-            onChange={(e) => setFormData({ ...formData, category: e.target.value as any })}
+            onChange={(e) => setFormData({ ...formData, category: e.target.value as Skill['category'] })}
             className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-sm focus:border-cyan-400 focus:outline-none"
           >
             <option value="Frontend">Frontend</option>
@@ -300,8 +364,11 @@ export const SkillModal: React.FC<SkillModalProps> = ({
         </div>
 
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
-          <button type="submit" className="px-5 py-2 text-sm font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg">Save Skill</button>
+          <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
+          <button type="submit" disabled={saving} className="px-5 py-2 text-sm font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg cursor-pointer disabled:opacity-50 inline-flex items-center gap-2">
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            {saving ? 'Saving...' : 'Save Skill'}
+          </button>
         </div>
       </form>
     </Modal>
@@ -331,8 +398,12 @@ export const ExperienceModal: React.FC<ExperienceModalProps> = ({
     order: 1
   });
   const [techText, setTechText] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setError(null);
+    setSaving(false);
     if (expToEdit) {
       setFormData(expToEdit);
       setTechText((expToEdit.technologies || []).join(', '));
@@ -344,25 +415,46 @@ export const ExperienceModal: React.FC<ExperienceModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.title || !formData.year) return;
+    setError(null);
+    const trimmedTitle = (formData.title || '').trim();
+    const trimmedYear = (formData.year || '').trim();
+    if (!trimmedTitle || !trimmedYear) {
+      setError('Year and milestone title are required.');
+      return;
+    }
 
     const exp: Experience = {
+      ...(expToEdit || {}),
       id: expToEdit?.id || 'exp-' + Date.now(),
-      year: formData.year,
-      title: formData.title,
-      role: formData.role || '',
-      description: formData.description || '',
+      year: trimmedYear,
+      title: trimmedTitle,
+      role: (formData.role || '').trim(),
+      description: (formData.description || '').trim(),
       technologies: techText.split(',').map(s => s.trim()).filter(Boolean),
       order: Number(formData.order) || 1
     };
 
-    await onSave(exp);
-    onClose();
+    setSaving(true);
+    try {
+      await onSave(exp);
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save milestone.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={expToEdit ? 'Edit Experience' : 'Add Experience'} maxWidth="max-w-md">
       <form onSubmit={handleSubmit} className="space-y-4">
+        {error && (
+          <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            <span>{error}</span>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-mono text-slate-300 uppercase mb-1">Year *</label>
@@ -431,8 +523,11 @@ export const ExperienceModal: React.FC<ExperienceModalProps> = ({
         </div>
 
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
-          <button type="submit" className="px-5 py-2 text-sm font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg">Save Milestone</button>
+          <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
+          <button type="submit" disabled={saving} className="px-5 py-2 text-sm font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg cursor-pointer disabled:opacity-50 inline-flex items-center gap-2">
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            {saving ? 'Saving...' : 'Save Milestone'}
+          </button>
         </div>
       </form>
     </Modal>
@@ -460,8 +555,12 @@ export const TestimonialModal: React.FC<TestimonialModalProps> = ({
     rating: 5,
     featured: true
   });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setError(null);
+    setSaving(false);
     if (testToEdit) {
       setFormData(testToEdit);
     } else {
@@ -471,25 +570,46 @@ export const TestimonialModal: React.FC<TestimonialModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.clientName || !formData.testimonial) return;
+    setError(null);
+    const trimmedName = (formData.clientName || '').trim();
+    const trimmedContent = (formData.testimonial || '').trim();
+    if (!trimmedName || !trimmedContent) {
+      setError('Client name and testimonial content are required.');
+      return;
+    }
 
     const item: Testimonial = {
+      ...(testToEdit || {}),
       id: testToEdit?.id || 'test-' + Date.now(),
-      clientName: formData.clientName,
-      business: formData.business || '',
-      testimonial: formData.testimonial,
+      clientName: trimmedName,
+      business: (formData.business || '').trim(),
+      testimonial: trimmedContent,
       rating: Number(formData.rating) || 5,
       featured: !!formData.featured,
       createdAt: testToEdit?.createdAt || new Date().toISOString()
     };
 
-    await onSave(item);
-    onClose();
+    setSaving(true);
+    try {
+      await onSave(item);
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save testimonial.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={testToEdit ? 'Edit Testimonial' : 'Add Testimonial'} maxWidth="max-w-md">
       <form onSubmit={handleSubmit} className="space-y-4">
+        {error && (
+          <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            <span>{error}</span>
+          </div>
+        )}
+
         <div>
           <label className="block text-xs font-mono text-slate-300 uppercase mb-1">Client Name *</label>
           <input
@@ -552,8 +672,11 @@ export const TestimonialModal: React.FC<TestimonialModalProps> = ({
         </div>
 
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
-          <button type="submit" className="px-5 py-2 text-sm font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg">Save Story</button>
+          <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
+          <button type="submit" disabled={saving} className="px-5 py-2 text-sm font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg cursor-pointer disabled:opacity-50 inline-flex items-center gap-2">
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            {saving ? 'Saving...' : 'Save Story'}
+          </button>
         </div>
       </form>
     </Modal>

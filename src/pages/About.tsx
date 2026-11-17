@@ -17,11 +17,15 @@ import {
 import { SectionHeader } from '../components/common/SectionHeader';
 import { Button } from '../components/common/Button';
 import { TechnologyBadge } from '../components/common/TechnologyBadge';
-import { useSettings, useSkills } from '../hooks/usePortfolioData';
+import { useProjects, useSettings, useSkills } from '../hooks/usePortfolioData';
 
 export const About: React.FC = () => {
   const { settings } = useSettings();
   const { skills } = useSkills();
+  const { projects } = useProjects();
+  const brandName = settings.name || 'VP Creations';
+  const brandTagline = settings.tagline || 'WE BUILD YOUR IDEAS';
+  const personName = settings.personName || 'Vishwa';
 
   const focusAreas = [
     {
@@ -75,15 +79,15 @@ export const About: React.FC = () => {
             <div className="relative rounded-3xl p-2 bg-gradient-to-b from-cyan-500/30 via-slate-800 to-blue-600/20 shadow-2xl shadow-cyan-950/50">
               <div className="relative rounded-2xl overflow-hidden bg-slate-950 aspect-[4/5]">
                 <img
-                  src="/images/hero-workspace.jpg"
-                  alt="Vishwam Kumar"
+                  src={settings.heroImage || '/images/hero-workspace.jpg'}
+                  alt={personName}
                   className="w-full h-full object-cover"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/30 to-transparent"></div>
 
                 <div className="absolute bottom-6 left-6 right-6 p-4 rounded-2xl bg-slate-900/80 border border-slate-700/60 backdrop-blur-md">
-                  <h3 className="text-xl font-bold text-white font-['Outfit']">Vishwam Kumar</h3>
-                  <p className="text-xs font-mono text-cyan-400 mt-0.5">Founder & Full Stack Developer</p>
+                  <h3 className="text-xl font-bold text-white font-['Outfit']">{personName}</h3>
+                  <p className="text-xs font-mono text-cyan-400 mt-0.5">Founder & {settings.profession || 'Full Stack Developer'}</p>
                   <p className="text-[11px] text-slate-400 mt-2">
                     Specializing in Full Stack Web, E-Commerce, and Intelligent Automation.
                   </p>
@@ -95,10 +99,10 @@ export const About: React.FC = () => {
           <div className="lg:col-span-7 space-y-6">
             <div className="space-y-4 text-slate-300 text-base md:text-lg leading-relaxed">
               <p>
-                Welcome! I'm <strong className="text-white">Vishwam Kumar</strong>, the creator and lead engineer at <span className="text-cyan-400 font-bold">VP Creations</span>.
+                Welcome! I'm <strong className="text-white">{personName}</strong>, the creator and lead engineer at <span className="text-cyan-400 font-bold">{brandName}</span>.
               </p>
               <p>
-                My mission is simple and unwavering: <strong className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-sky-400">"WE BUILD YOUR IDEAS"</strong>. 
+                My mission is simple and unwavering: <strong className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-sky-400">"{brandTagline}"</strong>. 
                 Too many businesses struggle with clunky, generic templates or fragmented tech stacks that don't scale. I bridge that gap by delivering bespoke software crafted with modern engineering practices.
               </p>
               <p>
@@ -109,7 +113,7 @@ export const About: React.FC = () => {
             {/* Quick stats / credentials */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-4">
               <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800">
-                <div className="text-2xl font-bold text-cyan-400 font-mono">10+</div>
+                <div className="text-2xl font-bold text-cyan-400 font-mono">{projects.length}+</div>
                 <div className="text-xs text-slate-400 mt-1">Shipped Projects</div>
               </div>
               <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800">
